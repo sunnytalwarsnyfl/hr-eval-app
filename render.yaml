@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: hr-eval-app
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_PATH
+        value: /var/data/hr_eval.db
+    disk:
+      name: hr-eval-db
+      mountPath: /var/data
+      sizeGB: 1

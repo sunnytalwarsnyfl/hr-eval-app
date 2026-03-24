@@ -1,0 +1,12 @@
+{
+  "name": "hr-eval-app",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && node db/seed.js && node server.js",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

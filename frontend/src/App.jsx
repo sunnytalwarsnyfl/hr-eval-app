@@ -1,0 +1,66 @@
+import { useState, useEffect, createContext, useContext } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import client from './api/client'
+
+// Pages
+import Login from './pages/Login'
+import Dashboard from './pages/Dashboard'
+import NewEvaluation from './pages/NewEvaluation'
+import EvaluationDetail from './pages/EvaluationDetail'
+import EvaluationList from './pages/EvaluationList'
+import EmployeeList from './pages/EmployeeList'
+import EmployeeProfile from './pages/EmployeeProfile'
+import Reports from './pages/Reports'
+import ProtectedRoute from './components/Shared/ProtectedRoute'
+
+const AuthContext = createContext(null)
+
+export function useAuth() {
+  return useContext(AuthContext)
+}
+
+export default function App() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Try to restore session from httpOnly cookie
+    client.get('/auth/me')
+      .then(res => setUser(res.data.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return (
+    <AuthContext.Provider value={{ user, setUser, loading }}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+          <Route path="/dashboard" element={
+            <ProtectedRoute><Dashboard /></ProtectedRoute>
+          } />
+          <Route path="/evaluations" element={
+            <ProtectedRoute><EvaluationList /></ProtectedRoute>
+          } />
+          <Route path="/evaluations/new" element={
+            <ProtectedRoute><NewEvaluation /></ProtectedRoute>
+          } />
+          <Route path="/evaluations/:id" element={
+            <ProtectedRoute><EvaluationDetail /></ProtectedRoute>
+          } />
+          <Route path="/employees" element={
+            <ProtectedRoute><EmployeeList /></ProtectedRoute>
+          } />
+          <Route path="/employees/:id" element={
+            <ProtectedRoute><EmployeeProfile /></ProtectedRoute>
+          } />
+          <Route path="/reports" element={
+            <ProtectedRoute><Reports /></ProtectedRoute>
+          } />
+        </Routes>
+      </BrowserRouter>
+    </AuthContext.Provider>
+  )
+}
