@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { employeesApi } from '../api/employees'
+import { settingsApi } from '../api/settings'
 
-const DEPARTMENTS = ['Sterile Processing', 'IT', 'QA', 'Administration', 'Other']
 const TECH_LEVELS = ['Tech 1', 'Tech 3', 'Tech 4', 'QA Tech', 'N/A']
 
 export default function EditEmployee() {
   const navigate = useNavigate()
   const { id } = useParams()
   const [managers, setManagers] = useState([])
+  const [departments, setDepartments] = useState([])
+  const [facilities, setFacilities] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -22,15 +24,18 @@ export default function EditEmployee() {
     job_title: '',
     tech_level: '',
     manager_id: '',
+    facility_id: '',
     active: true
   })
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [empRes, mgrRes] = await Promise.all([
+        const [empRes, mgrRes, deptRes, facRes] = await Promise.all([
           employeesApi.get(id),
-          employeesApi.getManagers()
+          employeesApi.getManagers(),
+          settingsApi.getDepartments(),
+          settingsApi.getFacilities()
         ])
         const emp = empRes.data.employee
         setForm({
@@ -41,9 +46,12 @@ export default function EditEmployee() {
           job_title: emp.job_title || '',
           tech_level: emp.tech_level || '',
           manager_id: emp.manager_id ? String(emp.manager_id) : '',
+          facility_id: emp.facility_id ? String(emp.facility_id) : '',
           active: emp.active === 1 || emp.active === true
         })
         setManagers(mgrRes.data.managers)
+        setDepartments(deptRes.data.departments.filter(d => d.active))
+        setFacilities(facRes.data.facilities.filter(f => f.active))
       } catch (e) {
         console.error(e)
         setError('Failed to load employee data')
@@ -68,6 +76,7 @@ export default function EditEmployee() {
         ...form,
         tech_level: form.tech_level === 'N/A' ? null : form.tech_level || null,
         manager_id: form.manager_id ? parseInt(form.manager_id) : null,
+        facility_id: form.facility_id ? parseInt(form.facility_id) : null,
         active: form.active ? 1 : 0
       }
       await employeesApi.update(id, payload)
@@ -159,8 +168,8 @@ export default function EditEmployee() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">Select department...</option>
-                  {DEPARTMENTS.map(d => (
-                    <option key={d} value={d}>{d}</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
               </div>
@@ -190,6 +199,22 @@ export default function EditEmployee() {
                   <option value="">None</option>
                   {['Tech 1', 'Tech 3', 'Tech 4', 'QA Tech', 'N/A'].map(t => (
                     <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Facility */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Facility / Client Site</label>
+                <select
+                  name="facility_id"
+                  value={form.facility_id}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">No facility assigned</option>
+                  {facilities.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}{f.city ? ` — ${f.city}` : ''}</option>
                   ))}
                 </select>
               </div>

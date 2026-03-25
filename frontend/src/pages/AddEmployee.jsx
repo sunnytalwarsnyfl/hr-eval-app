@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { employeesApi } from '../api/employees'
+import { settingsApi } from '../api/settings'
 
-const DEPARTMENTS = ['Sterile Processing', 'IT', 'QA', 'Administration', 'Other']
 const TECH_LEVELS = ['Tech 1', 'Tech 3', 'Tech 4', 'QA Tech', 'N/A']
 
 export default function AddEmployee() {
   const navigate = useNavigate()
   const [managers, setManagers] = useState([])
+  const [departments, setDepartments] = useState([])
+  const [facilities, setFacilities] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -19,13 +21,20 @@ export default function AddEmployee() {
     department: '',
     job_title: '',
     tech_level: '',
-    manager_id: ''
+    manager_id: '',
+    facility_id: ''
   })
 
   useEffect(() => {
-    employeesApi.getManagers()
-      .then(res => setManagers(res.data.managers))
-      .catch(e => console.error(e))
+    Promise.all([
+      employeesApi.getManagers(),
+      settingsApi.getDepartments(),
+      settingsApi.getFacilities()
+    ]).then(([mgr, dept, fac]) => {
+      setManagers(mgr.data.managers)
+      setDepartments(dept.data.departments.filter(d => d.active))
+      setFacilities(fac.data.facilities.filter(f => f.active))
+    }).catch(e => console.error(e))
   }, [])
 
   function handleChange(e) {
@@ -41,7 +50,8 @@ export default function AddEmployee() {
       const payload = {
         ...form,
         tech_level: form.tech_level === 'N/A' ? null : form.tech_level || null,
-        manager_id: form.manager_id ? parseInt(form.manager_id) : null
+        manager_id: form.manager_id ? parseInt(form.manager_id) : null,
+        facility_id: form.facility_id ? parseInt(form.facility_id) : null
       }
       await employeesApi.create(payload)
       navigate('/employees')
@@ -124,8 +134,8 @@ export default function AddEmployee() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">Select department...</option>
-                  {DEPARTMENTS.map(d => (
-                    <option key={d} value={d}>{d}</option>
+                  {departments.map(d => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
               </div>
@@ -156,6 +166,22 @@ export default function AddEmployee() {
                   <option value="">Select tech level...</option>
                   {TECH_LEVELS.map(t => (
                     <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Facility */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Facility / Client Site</label>
+                <select
+                  name="facility_id"
+                  value={form.facility_id}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">No facility assigned</option>
+                  {facilities.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}{f.city ? ` — ${f.city}` : ''}</option>
                   ))}
                 </select>
               </div>

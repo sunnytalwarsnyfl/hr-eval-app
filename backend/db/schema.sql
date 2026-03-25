@@ -77,6 +77,29 @@ CREATE TABLE IF NOT EXISTS pip_plans (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Facilities (client sites)
+CREATE TABLE IF NOT EXISTS facilities (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT,
+  city TEXT,
+  state TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Departments
+CREATE TABLE IF NOT EXISTS departments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Eval templates
 CREATE TABLE IF NOT EXISTS eval_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

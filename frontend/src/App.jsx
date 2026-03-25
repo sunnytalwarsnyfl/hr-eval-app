@@ -16,6 +16,7 @@ import Reports from './pages/Reports'
 import PIPList from './pages/PIPList'
 import PIPDetail from './pages/PIPDetail'
 import PIPForm from './pages/PIPForm'
+import Settings from './pages/Settings'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -81,6 +82,9 @@ export default function App() {
           } />
           <Route path="/reports" element={
             <ProtectedRoute><Reports /></ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <ProtectedRoute><Settings /></ProtectedRoute>
           } />
         </Routes>
       </BrowserRouter>

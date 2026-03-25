@@ -31,15 +31,33 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/pip', require('./routes/pip'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/settings', require('./routes/settings'));
 
-// Add status column to pip_plans if it doesn't exist (migration)
+// Runtime migrations
 try {
-  const { getDb } = require('./db/database');
   const db = getDb();
-  const cols = db.prepare("PRAGMA table_info(pip_plans)").all();
-  if (!cols.find(c => c.name === 'status')) {
-    db.exec(`ALTER TABLE pip_plans ADD COLUMN status TEXT DEFAULT 'Active' CHECK(status IN ('Active','Completed','Extended'))`);
-    console.log('Migration: added status column to pip_plans');
+
+  // pip_plans.status
+  const pipCols = db.prepare("PRAGMA table_info(pip_plans)").all();
+  if (!pipCols.find(c => c.name === 'status')) {
+    db.exec(`ALTER TABLE pip_plans ADD COLUMN status TEXT DEFAULT 'Active'`);
+    console.log('Migration: added status to pip_plans');
+  }
+
+  // employees.facility_id
+  const empCols = db.prepare("PRAGMA table_info(employees)").all();
+  if (!empCols.find(c => c.name === 'facility_id')) {
+    db.exec(`ALTER TABLE employees ADD COLUMN facility_id INTEGER REFERENCES facilities(id)`);
+    console.log('Migration: added facility_id to employees');
+  }
+
+  // Seed default departments if table is empty
+  const deptCount = db.prepare('SELECT COUNT(*) as c FROM departments').get();
+  if (deptCount.c === 0) {
+    const defaults = ['Sterile Processing', 'IT', 'QA', 'Administration', 'Other'];
+    const ins = db.prepare('INSERT OR IGNORE INTO departments (name) VALUES (?)');
+    defaults.forEach(n => ins.run(n));
+    console.log('Migration: seeded default departments');
   }
 } catch(e) { console.error('Migration error:', e.message); }
 

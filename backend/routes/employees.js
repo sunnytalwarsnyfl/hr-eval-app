@@ -14,12 +14,14 @@ router.get('/', (req, res) => {
     SELECT
       e.*,
       u.name AS manager_name,
+      f.name AS facility_name,
       ev.evaluation_date AS last_eval_date,
       ev.total_score AS last_score,
       ev.passed AS last_passed,
       ev.status AS last_status
     FROM employees e
     LEFT JOIN users u ON e.manager_id = u.id
+    LEFT JOIN facilities f ON e.facility_id = f.id
     LEFT JOIN (
       SELECT employee_id, evaluation_date, total_score, passed, status,
              ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY evaluation_date DESC) AS rn
@@ -101,7 +103,7 @@ router.get('/:id', (req, res) => {
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, email, hire_date, department, job_title, tech_level, manager_id } = req.body;
+  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id } = req.body;
 
   if (!name || !email || !hire_date || !department || !job_title) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -109,9 +111,9 @@ router.post('/', (req, res) => {
 
   try {
     const result = db.prepare(`
-      INSERT INTO employees (name, email, hire_date, department, job_title, tech_level, manager_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(name, email, hire_date, department, job_title, tech_level || null, manager_id || null);
+      INSERT INTO employees (name, email, hire_date, department, job_title, tech_level, manager_id, facility_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, email, hire_date, department, job_title, tech_level || null, manager_id || null, facility_id || null);
 
     const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ employee });
@@ -127,7 +129,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, email, hire_date, department, job_title, tech_level, manager_id, active } = req.body;
+  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, active } = req.body;
 
   const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
@@ -136,7 +138,7 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE employees
       SET name = ?, email = ?, hire_date = ?, department = ?, job_title = ?,
-          tech_level = ?, manager_id = ?, active = ?
+          tech_level = ?, manager_id = ?, facility_id = ?, active = ?
       WHERE id = ?
     `).run(
       name || employee.name,
@@ -146,6 +148,7 @@ router.put('/:id', (req, res) => {
       job_title || employee.job_title,
       tech_level !== undefined ? tech_level : employee.tech_level,
       manager_id !== undefined ? manager_id : employee.manager_id,
+      facility_id !== undefined ? facility_id : employee.facility_id,
       active !== undefined ? (active ? 1 : 0) : employee.active,
       id
     );
