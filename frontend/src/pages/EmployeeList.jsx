@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
-import StatusBadge from '../components/Shared/StatusBadge'
 import { employeesApi } from '../api/employees'
 
 export default function EmployeeList() {
@@ -9,6 +8,7 @@ export default function EmployeeList() {
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [toast, setToast] = useState(null)
 
   useEffect(() => { loadEmployees() }, [search])
 
@@ -24,21 +24,51 @@ export default function EmployeeList() {
     }
   }
 
+  function showToast(message, type = 'success') {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  async function handleSendInvite(emp, e) {
+    e.stopPropagation()
+    try {
+      const res = await employeesApi.sendInvite(emp.id)
+      showToast(res.data.message || `Invite sent to ${emp.email}`)
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to send invite', 'error')
+    }
+  }
+
   return (
     <Layout>
       <div className="space-y-6">
+        {/* Toast */}
+        {toast && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all ${
+            toast.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'
+          }`}>
+            {toast.message}
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Employees</h1>
             <p className="text-sm text-gray-500 mt-1">{employees.length} active employees</p>
           </div>
+          <button
+            onClick={() => navigate('/employees/new')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            + Add Employee
+          </button>
         </div>
 
         {/* Search */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <input
             type="text"
-            placeholder="Search by name, department..."
+            placeholder="Search by name, email, department..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -116,8 +146,20 @@ export default function EmployeeList() {
                             View
                           </button>
                           <button
+                            onClick={(e) => { e.stopPropagation(); navigate(`/employees/${emp.id}/edit`) }}
+                            className="text-gray-600 hover:text-gray-800 font-medium text-xs mr-2"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => handleSendInvite(emp, e)}
+                            className="text-green-600 hover:text-green-800 font-medium text-xs mr-2"
+                          >
+                            Invite
+                          </button>
+                          <button
                             onClick={() => navigate(`/evaluations/new?employee=${emp.id}`)}
-                            className="text-green-600 hover:text-green-800 font-medium text-xs"
+                            className="text-purple-600 hover:text-purple-800 font-medium text-xs"
                           >
                             + Eval
                           </button>

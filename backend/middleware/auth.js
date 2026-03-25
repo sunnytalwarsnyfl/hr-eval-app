@@ -21,4 +21,11 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { authenticateToken, requireRole, JWT_SECRET };
+function requireManagerOrAbove(req, res, next) {
+  if (!['manager', 'hr', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
+module.exports = { authenticateToken, requireRole, requireManagerOrAbove, JWT_SECRET };

@@ -31,7 +31,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">HR Eval System</h1>
+            <h1 className="text-2xl font-bold text-gray-900">SIPS HR Evaluation System</h1>
             <p className="text-gray-500 text-sm mt-2">Performance Management Portal</p>
           </div>
 

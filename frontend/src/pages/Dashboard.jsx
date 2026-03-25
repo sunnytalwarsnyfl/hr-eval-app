@@ -5,12 +5,19 @@ import KPICard from '../components/Dashboard/KPICard'
 import RecentEvalsTable from '../components/Dashboard/RecentEvalsTable'
 import ScoreChart from '../components/Dashboard/ScoreChart'
 import { reportsApi } from '../api/reports'
+import { notificationsApi } from '../api/notifications'
+import { useAuth } from '../App'
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
   const [deptScores, setDeptScores] = useState([])
   const [loading, setLoading] = useState(true)
+  const [reminderStatus, setReminderStatus] = useState(null)
+  const [sendingReminders, setSendingReminders] = useState(false)
   const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const isHrOrAdmin = user?.role === 'hr' || user?.role === 'admin'
 
   useEffect(() => {
     loadData()
@@ -28,6 +35,19 @@ export default function Dashboard() {
       console.error(e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleSendReminders() {
+    setSendingReminders(true)
+    setReminderStatus(null)
+    try {
+      const res = await notificationsApi.sendReminders()
+      setReminderStatus({ type: 'success', message: res.data.message || 'Reminders sent successfully.' })
+    } catch (err) {
+      setReminderStatus({ type: 'error', message: err.response?.data?.error || 'Failed to send reminders.' })
+    } finally {
+      setSendingReminders(false)
     }
   }
 
@@ -49,13 +69,35 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-sm text-gray-500 mt-1">HR Performance Overview</p>
           </div>
-          <button
-            onClick={() => navigate('/evaluations/new')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            + Start New Evaluation
-          </button>
+          <div className="flex items-center gap-3">
+            {isHrOrAdmin && (
+              <button
+                onClick={handleSendReminders}
+                disabled={sendingReminders}
+                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                {sendingReminders ? 'Sending...' : '📧 Send Reminder Emails'}
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/evaluations/new')}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              + Start New Evaluation
+            </button>
+          </div>
         </div>
+
+        {/* Reminder status message */}
+        {reminderStatus && (
+          <div className={`p-3 rounded-lg text-sm font-medium ${
+            reminderStatus.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {reminderStatus.message}
+          </div>
+        )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

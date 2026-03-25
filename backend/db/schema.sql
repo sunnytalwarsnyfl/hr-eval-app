@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS pip_plans (
   expectations TEXT,
   timeline TEXT,
   next_pip_date DATE,
+  status TEXT DEFAULT 'Active' CHECK(status IN ('Active','Completed','Extended')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -29,6 +29,19 @@ app.use('/api/employees', require('./routes/employees'));
 app.use('/api/evaluations', require('./routes/evaluations'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/pip', require('./routes/pip'));
+app.use('/api/notifications', require('./routes/notifications'));
+
+// Add status column to pip_plans if it doesn't exist (migration)
+try {
+  const { getDb } = require('./db/database');
+  const db = getDb();
+  const cols = db.prepare("PRAGMA table_info(pip_plans)").all();
+  if (!cols.find(c => c.name === 'status')) {
+    db.exec(`ALTER TABLE pip_plans ADD COLUMN status TEXT DEFAULT 'Active' CHECK(status IN ('Active','Completed','Extended'))`);
+    console.log('Migration: added status column to pip_plans');
+  }
+} catch(e) { console.error('Migration error:', e.message); }
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

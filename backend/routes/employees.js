@@ -31,6 +31,12 @@ router.get('/', (req, res) => {
 
   const params = [];
 
+  // Manager role: only see their assigned employees
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  }
+
   if (search) {
     query += ` AND (e.name LIKE ? OR e.email LIKE ? OR e.department LIKE ?)`;
     const like = `%${search}%`;
@@ -68,6 +74,11 @@ router.get('/:id', (req, res) => {
   `).get(id);
 
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  // Manager can only view their own employees
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
 
   const evaluations = db.prepare(`
     SELECT ev.*, u.name AS evaluator_name
@@ -144,6 +155,45 @@ router.put('/:id', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// DELETE /api/employees/:id — soft delete
+router.delete('/:id', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  try {
+    db.prepare('UPDATE employees SET active = 0 WHERE id = ?').run(id);
+    res.json({ message: 'Employee deactivated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/employees/:id/invite — send invite email (mock)
+router.post('/:id/invite', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  // Try to send via mailer if configured, else mock
+  try {
+    const { sendEmail } = require('../utils/mailer');
+    sendEmail({
+      to: employee.email,
+      subject: 'Welcome to SIPS HR Evaluation System',
+      html: `<p>Hello ${employee.name},</p><p>You have been added to the SIPS HR Evaluation System. Your manager will schedule your performance evaluations through this platform.</p><p>Thank you.</p>`
+    }).catch(err => console.error('Email send error:', err.message));
+  } catch (e) {
+    console.log(`[EMAIL MOCK] Invite to: ${employee.email}`);
+  }
+
+  res.json({ success: true, message: `Invite sent to ${employee.email}` });
 });
 
 module.exports = router;

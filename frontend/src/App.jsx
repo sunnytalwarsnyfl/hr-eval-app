@@ -10,7 +10,12 @@ import EvaluationDetail from './pages/EvaluationDetail'
 import EvaluationList from './pages/EvaluationList'
 import EmployeeList from './pages/EmployeeList'
 import EmployeeProfile from './pages/EmployeeProfile'
+import AddEmployee from './pages/AddEmployee'
+import EditEmployee from './pages/EditEmployee'
 import Reports from './pages/Reports'
+import PIPList from './pages/PIPList'
+import PIPDetail from './pages/PIPDetail'
+import PIPForm from './pages/PIPForm'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -53,8 +58,26 @@ export default function App() {
           <Route path="/employees" element={
             <ProtectedRoute><EmployeeList /></ProtectedRoute>
           } />
+          <Route path="/employees/new" element={
+            <ProtectedRoute><AddEmployee /></ProtectedRoute>
+          } />
+          <Route path="/employees/:id/edit" element={
+            <ProtectedRoute><EditEmployee /></ProtectedRoute>
+          } />
           <Route path="/employees/:id" element={
             <ProtectedRoute><EmployeeProfile /></ProtectedRoute>
+          } />
+          <Route path="/pip" element={
+            <ProtectedRoute><PIPList /></ProtectedRoute>
+          } />
+          <Route path="/pip/new" element={
+            <ProtectedRoute><PIPForm /></ProtectedRoute>
+          } />
+          <Route path="/pip/:id/edit" element={
+            <ProtectedRoute><PIPForm /></ProtectedRoute>
+          } />
+          <Route path="/pip/:id" element={
+            <ProtectedRoute><PIPDetail /></ProtectedRoute>
           } />
           <Route path="/reports" element={
             <ProtectedRoute><Reports /></ProtectedRoute>

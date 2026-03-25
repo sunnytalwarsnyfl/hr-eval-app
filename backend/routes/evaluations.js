@@ -45,6 +45,12 @@ router.get('/', (req, res) => {
 
   const params = [];
 
+  // Manager role: only see evaluations for their assigned employees
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  }
+
   if (department) {
     query += ` AND e.department = ?`;
     params.push(department);
