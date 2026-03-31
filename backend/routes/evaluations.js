@@ -16,7 +16,9 @@ function recalculateTotals(db, evalId) {
   // Recalculate evaluation total
   const totalResult = db.prepare('SELECT COALESCE(SUM(section_score), 0) AS total FROM eval_sections WHERE evaluation_id = ?').get(evalId);
   const totalScore = totalResult.total;
-  const passed = totalScore >= 211 ? 1 : 0;
+  const evalRecord = db.prepare('SELECT passing_score FROM evaluations WHERE id = ?').get(evalId);
+  const passingScore = evalRecord?.passing_score || 211;
+  const passed = totalScore >= passingScore ? 1 : 0;
 
   db.prepare(`
     UPDATE evaluations SET total_score = ?, passed = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -124,22 +126,27 @@ router.post('/', (req, res) => {
   const {
     employee_id, evaluator_id, evaluation_type, evaluation_date,
     status, sections, supervisor_comments, employee_comments,
-    next_eval_date, pip_plan
+    next_eval_date, pip_plan, max_score, passing_score
   } = req.body;
 
   if (!employee_id || !evaluation_type || !evaluation_date) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  const evalMaxScore = max_score || 227;
+  const evalPassingScore = passing_score || 211;
+
   const evalId = db.prepare(`
     INSERT INTO evaluations (employee_id, evaluator_id, evaluation_type, evaluation_date, status, max_score, passing_score, supervisor_comments, employee_comments, next_eval_date)
-    VALUES (?, ?, ?, ?, ?, 227, 211, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     employee_id,
     evaluator_id || req.user.id,
     evaluation_type,
     evaluation_date,
     status || 'Draft',
+    evalMaxScore,
+    evalPassingScore,
     supervisor_comments || null,
     employee_comments || null,
     next_eval_date || null

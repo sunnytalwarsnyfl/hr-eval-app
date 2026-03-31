@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL REFERENCES employees(id),
   evaluator_id INTEGER NOT NULL REFERENCES users(id),
-  evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up')),
+  evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up','Tech Review')),
   evaluation_date DATE NOT NULL,
   status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Submitted','Acknowledged')),
   total_score INTEGER DEFAULT 0,

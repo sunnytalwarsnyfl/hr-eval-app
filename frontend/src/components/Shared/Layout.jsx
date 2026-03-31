@@ -112,6 +112,12 @@ export default function Layout({ children }) {
           >
             + New Evaluation
           </NavLink>
+          <NavLink
+            to="/evaluations/tech/new"
+            className="flex items-center justify-center w-full px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            🔬 New Tech Evaluation
+          </NavLink>
           {/* Role badge */}
           <div className="flex items-center justify-center">
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${roleBadgeColor}`}>

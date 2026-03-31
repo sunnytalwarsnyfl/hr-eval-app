@@ -17,6 +17,7 @@ import PIPList from './pages/PIPList'
 import PIPDetail from './pages/PIPDetail'
 import PIPForm from './pages/PIPForm'
 import Settings from './pages/Settings'
+import NewTechEvaluation from './pages/NewTechEvaluation'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -52,6 +53,9 @@ export default function App() {
           } />
           <Route path="/evaluations/new" element={
             <ProtectedRoute><NewEvaluation /></ProtectedRoute>
+          } />
+          <Route path="/evaluations/tech/new" element={
+            <ProtectedRoute><NewTechEvaluation /></ProtectedRoute>
           } />
           <Route path="/evaluations/:id" element={
             <ProtectedRoute><EvaluationDetail /></ProtectedRoute>
