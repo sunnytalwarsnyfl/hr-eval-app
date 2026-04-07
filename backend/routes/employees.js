@@ -100,10 +100,26 @@ router.get('/:id', (req, res) => {
   res.json({ employee, evaluations, pipPlans });
 });
 
+// GET /api/employees/leaders — employees where is_leadership = 1
+router.get('/leaders', (req, res) => {
+  const db = getDb();
+  try {
+    const leaders = db.prepare(`
+      SELECT id, name, email, department, job_title, facility_id
+      FROM employees
+      WHERE is_leadership = 1 AND active = 1
+      ORDER BY name ASC
+    `).all();
+    res.json({ leaders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id } = req.body;
+  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, phone, employment_type, is_leadership, is_evaluator, belt_level } = req.body;
 
   if (!name || !email || !hire_date || !department || !job_title) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -111,9 +127,14 @@ router.post('/', (req, res) => {
 
   try {
     const result = db.prepare(`
-      INSERT INTO employees (name, email, hire_date, department, job_title, tech_level, manager_id, facility_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, email, hire_date, department, job_title, tech_level || null, manager_id || null, facility_id || null);
+      INSERT INTO employees (name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, phone, employment_type, is_leadership, is_evaluator, belt_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      name, email, hire_date, department, job_title,
+      tech_level || null, manager_id || null, facility_id || null,
+      phone || null, employment_type || 'Permanent',
+      is_leadership ? 1 : 0, is_evaluator ? 1 : 0, belt_level || null
+    );
 
     const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ employee });
@@ -129,7 +150,7 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, active } = req.body;
+  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, active, phone, employment_type, is_leadership, is_evaluator, belt_level } = req.body;
 
   const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
@@ -138,7 +159,8 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE employees
       SET name = ?, email = ?, hire_date = ?, department = ?, job_title = ?,
-          tech_level = ?, manager_id = ?, facility_id = ?, active = ?
+          tech_level = ?, manager_id = ?, facility_id = ?, active = ?,
+          phone = ?, employment_type = ?, is_leadership = ?, is_evaluator = ?, belt_level = ?
       WHERE id = ?
     `).run(
       name || employee.name,
@@ -150,6 +172,11 @@ router.put('/:id', (req, res) => {
       manager_id !== undefined ? manager_id : employee.manager_id,
       facility_id !== undefined ? facility_id : employee.facility_id,
       active !== undefined ? (active ? 1 : 0) : employee.active,
+      phone !== undefined ? phone : employee.phone,
+      employment_type !== undefined ? employment_type : employee.employment_type,
+      is_leadership !== undefined ? (is_leadership ? 1 : 0) : employee.is_leadership,
+      is_evaluator !== undefined ? (is_evaluator ? 1 : 0) : employee.is_evaluator,
+      belt_level !== undefined ? belt_level : employee.belt_level,
       id
     );
 

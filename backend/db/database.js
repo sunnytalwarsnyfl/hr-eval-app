@@ -17,14 +17,14 @@ function runMigrations(db) {
 
     // Check if we can insert a Tech Review type (the CHECK constraint would block it)
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluations'").get();
-    if (tableInfo && tableInfo.sql && !tableInfo.sql.includes('Tech Review')) {
+    if (tableInfo && tableInfo.sql && (!tableInfo.sql.includes('Tech Review') || !tableInfo.sql.includes('Self-Evaluation'))) {
       db.pragma('foreign_keys = OFF');
       db.exec('BEGIN TRANSACTION');
       db.exec(`CREATE TABLE evaluations_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         employee_id INTEGER NOT NULL REFERENCES employees(id),
         evaluator_id INTEGER NOT NULL REFERENCES users(id),
-        evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up','Tech Review')),
+        evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up','Tech Review','Self-Evaluation')),
         evaluation_date DATE NOT NULL,
         status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Submitted','Acknowledged')),
         total_score INTEGER DEFAULT 0,

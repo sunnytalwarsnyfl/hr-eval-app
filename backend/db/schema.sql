@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL REFERENCES employees(id),
   evaluator_id INTEGER NOT NULL REFERENCES users(id),
-  evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up','Tech Review')),
+  evaluation_type TEXT NOT NULL CHECK(evaluation_type IN ('Annual','Mid-Year','90-Day','PIP Follow-up','Tech Review','Self-Evaluation')),
   evaluation_date DATE NOT NULL,
   status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Submitted','Acknowledged')),
   total_score INTEGER DEFAULT 0,
@@ -97,6 +97,55 @@ CREATE TABLE IF NOT EXISTS departments (
   name TEXT NOT NULL UNIQUE,
   description TEXT,
   active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Attendance Log
+CREATE TABLE IF NOT EXISTS attendance_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  date_of_occurrence DATE NOT NULL,
+  occurrence_type TEXT,
+  description TEXT,
+  accumulated_points INTEGER DEFAULT 0,
+  roll_off_date DATE,
+  next_step TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Disciplinary Action
+CREATE TABLE IF NOT EXISTS disciplinary_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  date_of_incident DATE NOT NULL,
+  issue TEXT,
+  details TEXT,
+  accumulated_points INTEGER DEFAULT 0,
+  issuance_date DATE,
+  monitoring_period TEXT DEFAULT '30 Days',
+  type TEXT DEFAULT 'New' CHECK(type IN ('New','Extension')),
+  status TEXT DEFAULT 'Incomplete' CHECK(status IN ('Complete - Met Expectations','Incomplete')),
+  roll_off_date DATE,
+  next_step TEXT,
+  notification_sent INTEGER DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- QA Log
+CREATE TABLE IF NOT EXISTS qa_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  date_of_incident DATE NOT NULL,
+  issue TEXT,
+  description TEXT,
+  accumulated_points INTEGER DEFAULT 0,
+  roll_off_date DATE,
+  status TEXT DEFAULT 'Incomplete' CHECK(status IN ('Complete - Met Expectations','Incomplete')),
+  action_step TEXT,
+  notification_sent INTEGER DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

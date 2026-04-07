@@ -3,6 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { employeesApi } from '../api/employees'
 
+const BELT_LEVEL_COLORS = {
+  'White': 'bg-gray-100 text-gray-700 border border-gray-300',
+  'Yellow': 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+  'Green': 'bg-green-100 text-green-700 border border-green-300',
+  'Blue': 'bg-blue-100 text-blue-700 border border-blue-300',
+  'Brown': 'bg-amber-100 text-amber-800 border border-amber-300',
+  'Black': 'bg-gray-900 text-white border border-gray-700',
+}
+
 export default function EmployeeList() {
   const navigate = useNavigate()
   const [employees, setEmployees] = useState([])
@@ -89,7 +98,7 @@ export default function EmployeeList() {
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Department</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Job Title</th>
-                    <th className="text-center px-4 py-3 font-medium text-gray-600">Tech Level</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600">Belt Level</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Hire Date</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Last Eval</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Last Score</th>
@@ -98,8 +107,9 @@ export default function EmployeeList() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {employees.map(emp => {
+                    const maxScore = emp.max_score || 227
                     const pct = emp.last_score && emp.last_score > 0
-                      ? Math.round(emp.last_score / 227 * 100)
+                      ? Math.round(emp.last_score / maxScore * 100)
                       : null
                     return (
                       <tr
@@ -111,9 +121,9 @@ export default function EmployeeList() {
                         <td className="px-4 py-3 text-gray-600">{emp.department}</td>
                         <td className="px-4 py-3 text-gray-600">{emp.job_title}</td>
                         <td className="px-4 py-3 text-center">
-                          {emp.tech_level ? (
-                            <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
-                              {emp.tech_level}
+                          {(emp.belt_level || emp.tech_level) ? (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${BELT_LEVEL_COLORS[emp.belt_level || emp.tech_level] || 'bg-blue-100 text-blue-700'}`}>
+                              {emp.belt_level || emp.tech_level}
                             </span>
                           ) : '—'}
                         </td>
@@ -134,7 +144,7 @@ export default function EmployeeList() {
                         <td className="px-4 py-3 text-right">
                           {pct !== null ? (
                             <span className={`font-medium ${pct >= 93 ? 'text-green-600' : pct >= 80 ? 'text-blue-600' : 'text-red-500'}`}>
-                              {emp.last_score}/227 ({pct}%)
+                              {emp.max_score ? `${emp.last_score}/${emp.max_score}` : emp.last_score} ({pct}%)
                             </span>
                           ) : '—'}
                         </td>
@@ -153,15 +163,9 @@ export default function EmployeeList() {
                           </button>
                           <button
                             onClick={(e) => handleSendInvite(emp, e)}
-                            className="text-green-600 hover:text-green-800 font-medium text-xs mr-2"
+                            className="text-green-600 hover:text-green-800 font-medium text-xs"
                           >
                             Invite
-                          </button>
-                          <button
-                            onClick={() => navigate(`/evaluations/new?employee=${emp.id}`)}
-                            className="text-purple-600 hover:text-purple-800 font-medium text-xs"
-                          >
-                            + Eval
                           </button>
                         </td>
                       </tr>

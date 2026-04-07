@@ -7,6 +7,15 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts'
 
+const BELT_LEVEL_COLORS = {
+  'White': 'bg-gray-100 text-gray-700 border border-gray-300',
+  'Yellow': 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+  'Green': 'bg-green-100 text-green-700 border border-green-300',
+  'Blue': 'bg-blue-100 text-blue-700 border border-blue-300',
+  'Brown': 'bg-amber-100 text-amber-800 border border-amber-300',
+  'Black': 'bg-gray-900 text-white border border-gray-700',
+}
+
 export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -86,10 +95,10 @@ export default function EmployeeProfile() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div><span className="text-gray-500 block text-xs mb-1">Department</span><span className="font-medium">{employee.department}</span></div>
             <div><span className="text-gray-500 block text-xs mb-1">Job Title</span><span className="font-medium">{employee.job_title}</span></div>
-            <div><span className="text-gray-500 block text-xs mb-1">Tech Level</span>
+            <div><span className="text-gray-500 block text-xs mb-1">Belt Level</span>
               <span className="font-medium">
-                {employee.tech_level ? (
-                  <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">{employee.tech_level}</span>
+                {(employee.belt_level || employee.tech_level) ? (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${BELT_LEVEL_COLORS[employee.belt_level || employee.tech_level] || 'bg-blue-100 text-blue-700'}`}>{employee.belt_level || employee.tech_level}</span>
                 ) : 'N/A'}
               </span>
             </div>

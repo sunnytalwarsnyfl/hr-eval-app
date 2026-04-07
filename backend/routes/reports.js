@@ -72,13 +72,70 @@ router.get('/dashboard', (req, res) => {
     ORDER BY last_eval_date ASC NULLS FIRST
   `).all();
 
+  // Attendance summary: employees with active attendance points > 0
+  let attendance_summary = 0;
+  try {
+    const attRow = db.prepare(`
+      SELECT COUNT(DISTINCT employee_id) AS count
+      FROM attendance_log
+      WHERE roll_off_date > date('now') AND accumulated_points > 0
+    `).get();
+    attendance_summary = attRow.count;
+  } catch (_) {}
+
+  // Disciplinary open: count of open (Incomplete) disciplinary actions
+  let disciplinary_open = 0;
+  try {
+    const discRow = db.prepare(`
+      SELECT COUNT(*) AS count FROM disciplinary_actions WHERE status = 'Incomplete'
+    `).get();
+    disciplinary_open = discRow.count;
+  } catch (_) {}
+
+  // QA incomplete: count of incomplete QA items
+  let qa_incomplete = 0;
+  try {
+    const qaRow = db.prepare(`
+      SELECT COUNT(*) AS count FROM qa_log WHERE status = 'Incomplete'
+    `).get();
+    qa_incomplete = qaRow.count;
+  } catch (_) {}
+
+  // Evals due in 30 days: employees with hire anniversary within next 30 days
+  let evals_due_30 = 0;
+  try {
+    const evalsDueRow = db.prepare(`
+      SELECT COUNT(*) AS count FROM employees
+      WHERE active = 1
+        AND (
+          CAST(strftime('%j', date('now', '+30 days')) AS INTEGER) >=
+            CASE
+              WHEN CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date)) || ' years')) AS INTEGER) >= CAST(strftime('%j', 'now') AS INTEGER)
+              THEN CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date)) || ' years')) AS INTEGER)
+              ELSE CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date) + 1) || ' years')) AS INTEGER)
+            END
+          AND
+            CASE
+              WHEN CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date)) || ' years')) AS INTEGER) >= CAST(strftime('%j', 'now') AS INTEGER)
+              THEN CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date)) || ' years')) AS INTEGER)
+              ELSE CAST(strftime('%j', date(hire_date, '+' || (strftime('%Y','now') - strftime('%Y', hire_date) + 1) || ' years')) AS INTEGER)
+            END >= CAST(strftime('%j', 'now') AS INTEGER)
+        )
+    `).get();
+    evals_due_30 = evalsDueRow.count;
+  } catch (_) {}
+
   res.json({
     total_this_month: thisMonth.count,
     avg_score_pct: avgScore.avg_pct || 0,
     employees_due: employeesDue.count,
     active_pips: activePips.count,
     recent_evals: recentEvals,
-    overdue_employees: overdueEmployees
+    overdue_employees: overdueEmployees,
+    attendance_summary,
+    disciplinary_open,
+    qa_incomplete,
+    evals_due_30
   });
 });
 

@@ -4,7 +4,14 @@ import Layout from '../components/Shared/Layout'
 import { employeesApi } from '../api/employees'
 import { settingsApi } from '../api/settings'
 
-const TECH_LEVELS = ['Tech 1', 'Tech 3', 'Tech 4', 'QA Tech', 'N/A']
+const BELT_LEVELS = [
+  { value: 'White', label: 'White Belt', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  { value: 'Yellow', label: 'Yellow Belt', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  { value: 'Green', label: 'Green Belt', color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'Blue', label: 'Blue Belt', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'Brown', label: 'Brown Belt', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  { value: 'Black', label: 'Black Belt', color: 'bg-gray-900 text-white border-gray-700' },
+]
 
 export default function AddEmployee() {
   const navigate = useNavigate()
@@ -20,9 +27,13 @@ export default function AddEmployee() {
     hire_date: '',
     department: '',
     job_title: '',
-    tech_level: '',
+    belt_level: '',
     manager_id: '',
-    facility_id: ''
+    facility_id: '',
+    phone: '',
+    employment_type: '',
+    is_leadership: false,
+    is_evaluator: false
   })
 
   useEffect(() => {
@@ -38,8 +49,8 @@ export default function AddEmployee() {
   }, [])
 
   function handleChange(e) {
-    const { name, value } = e.target
-    setForm(prev => ({ ...prev, [name]: value }))
+    const { name, value, type, checked } = e.target
+    setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
   async function handleSubmit(e) {
@@ -49,9 +60,11 @@ export default function AddEmployee() {
     try {
       const payload = {
         ...form,
-        tech_level: form.tech_level === 'N/A' ? null : form.tech_level || null,
+        belt_level: form.belt_level || null,
         manager_id: form.manager_id ? parseInt(form.manager_id) : null,
-        facility_id: form.facility_id ? parseInt(form.facility_id) : null
+        facility_id: form.facility_id ? parseInt(form.facility_id) : null,
+        is_leadership: form.is_leadership ? 1 : 0,
+        is_evaluator: form.is_evaluator ? 1 : 0
       }
       await employeesApi.create(payload)
       navigate('/employees')
@@ -96,9 +109,9 @@ export default function AddEmployee() {
                 />
               </div>
 
-              {/* Email */}
+              {/* Work Email */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Work Email <span className="text-red-500">*</span></label>
                 <input
                   type="email"
                   name="email"
@@ -106,6 +119,19 @@ export default function AddEmployee() {
                   value={form.email}
                   onChange={handleChange}
                   placeholder="jane.smith@company.com"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Phone Number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleChange}
+                  placeholder="(555) 123-4567"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -154,19 +180,34 @@ export default function AddEmployee() {
                 />
               </div>
 
-              {/* Tech Level */}
+              {/* Belt Level */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tech Level</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Belt Level</label>
                 <select
-                  name="tech_level"
-                  value={form.tech_level}
+                  name="belt_level"
+                  value={form.belt_level}
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  <option value="">Select tech level...</option>
-                  {TECH_LEVELS.map(t => (
-                    <option key={t} value={t}>{t}</option>
+                  <option value="">Select belt level...</option>
+                  {BELT_LEVELS.map(b => (
+                    <option key={b.value} value={b.value}>{b.label}</option>
                   ))}
+                </select>
+              </div>
+
+              {/* Employment Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
+                <select
+                  name="employment_type"
+                  value={form.employment_type}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Select type...</option>
+                  <option value="Permanent">Permanent</option>
+                  <option value="Temporary">Temporary</option>
                 </select>
               </div>
 
@@ -200,6 +241,33 @@ export default function AddEmployee() {
                     <option key={m.id} value={m.id}>{m.name} {m.department ? `(${m.department})` : ''}</option>
                   ))}
                 </select>
+              </div>
+              {/* Leadership Position */}
+              <div className="flex items-center gap-3 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="is_leadership"
+                    checked={form.is_leadership}
+                    onChange={handleChange}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Leadership Position</span>
+                </label>
+              </div>
+
+              {/* Add as Evaluator */}
+              <div className="flex items-center gap-3 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="is_evaluator"
+                    checked={form.is_evaluator}
+                    onChange={handleChange}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Add as Evaluator</span>
+                </label>
               </div>
             </div>
 

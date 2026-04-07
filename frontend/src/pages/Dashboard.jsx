@@ -6,6 +6,7 @@ import RecentEvalsTable from '../components/Dashboard/RecentEvalsTable'
 import ScoreChart from '../components/Dashboard/ScoreChart'
 import { reportsApi } from '../api/reports'
 import { notificationsApi } from '../api/notifications'
+import { attendanceApi, disciplinaryApi } from '../api/logs'
 import { useAuth } from '../App'
 
 export default function Dashboard() {
@@ -14,6 +15,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [reminderStatus, setReminderStatus] = useState(null)
   const [sendingReminders, setSendingReminders] = useState(false)
+  const [attendanceSummary, setAttendanceSummary] = useState(null)
+  const [disciplinarySummary, setDisciplinarySummary] = useState(null)
   const navigate = useNavigate()
   const { user } = useAuth()
 
@@ -25,12 +28,16 @@ export default function Dashboard() {
 
   async function loadData() {
     try {
-      const [dashRes, deptRes] = await Promise.all([
+      const [dashRes, deptRes, attRes, discRes] = await Promise.all([
         reportsApi.dashboard(),
-        reportsApi.deptScores()
+        reportsApi.deptScores(),
+        attendanceApi.summary().catch(() => ({ data: {} })),
+        disciplinaryApi.summary().catch(() => ({ data: {} }))
       ])
       setData(dashRes.data)
       setDeptScores(deptRes.data.data)
+      setAttendanceSummary(attRes.data)
+      setDisciplinarySummary(discRes.data)
     } catch (e) {
       console.error(e)
     } finally {
@@ -131,6 +138,66 @@ export default function Dashboard() {
           />
         </div>
 
+        {/* Log Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-2xl">📅</span>
+              <h3 className="text-sm font-medium text-gray-600">Active Attendance Points</h3>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">{attendanceSummary?.active_points ?? attendanceSummary?.count ?? 0}</p>
+            <p className="text-xs text-gray-500 mt-1">Employees with active points</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-2xl">⚖️</span>
+              <h3 className="text-sm font-medium text-gray-600">Open Disciplinary Cases</h3>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">{disciplinarySummary?.open_cases ?? disciplinarySummary?.count ?? 0}</p>
+            <p className="text-xs text-gray-500 mt-1">Cases currently being monitored</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-2xl">🔍</span>
+              <h3 className="text-sm font-medium text-gray-600">Incomplete QA Items</h3>
+            </div>
+            <p className="text-3xl font-bold text-gray-900">{data?.incomplete_qa ?? 0}</p>
+            <p className="text-xs text-gray-500 mt-1">QA items pending completion</p>
+          </div>
+        </div>
+
+        {/* Evaluations Due (anniversary within 30 days) */}
+        {data?.employees_due_list && data.employees_due_list.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">
+              Evaluations Due
+              <span className="ml-2 bg-yellow-100 text-yellow-600 text-xs px-2 py-0.5 rounded-full">
+                {data.employees_due_list.length}
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">Employees with anniversary dates within the next 30 days</p>
+            <div className="space-y-2">
+              {data.employees_due_list.map(emp => (
+                <div
+                  key={emp.id}
+                  className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-100 cursor-pointer hover:bg-yellow-100 transition-colors"
+                  onClick={() => navigate(`/employees/${emp.id}`)}
+                >
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{emp.name}</p>
+                    <p className="text-xs text-gray-500">{emp.department} - {emp.job_title}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-yellow-700 font-medium">
+                      Anniversary: {emp.anniversary_date || emp.hire_date}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Charts + Table row */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* Department Scores */}
@@ -161,7 +228,7 @@ export default function Dashboard() {
                   >
                     <div>
                       <p className="font-medium text-gray-900 text-sm">{emp.name}</p>
-                      <p className="text-xs text-gray-500">{emp.department} • {emp.tech_level || 'N/A'}</p>
+                      <p className="text-xs text-gray-500">{emp.department} • {emp.belt_level || emp.tech_level || 'N/A'}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-red-600 font-medium">

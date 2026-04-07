@@ -18,6 +18,9 @@ import PIPDetail from './pages/PIPDetail'
 import PIPForm from './pages/PIPForm'
 import Settings from './pages/Settings'
 import NewTechEvaluation from './pages/NewTechEvaluation'
+import AttendanceLog from './pages/AttendanceLog'
+import DisciplinaryAction from './pages/DisciplinaryAction'
+import QALog from './pages/QALog'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -59,6 +62,15 @@ export default function App() {
           } />
           <Route path="/evaluations/:id" element={
             <ProtectedRoute><EvaluationDetail /></ProtectedRoute>
+          } />
+          <Route path="/attendance" element={
+            <ProtectedRoute><AttendanceLog /></ProtectedRoute>
+          } />
+          <Route path="/disciplinary" element={
+            <ProtectedRoute><DisciplinaryAction /></ProtectedRoute>
+          } />
+          <Route path="/qa-log" element={
+            <ProtectedRoute><QALog /></ProtectedRoute>
           } />
           <Route path="/employees" element={
             <ProtectedRoute><EmployeeList /></ProtectedRoute>
