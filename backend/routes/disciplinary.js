@@ -3,6 +3,7 @@ const router = express.Router();
 const crypto = require('crypto');
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { upload } = require('../middleware/upload');
 const { sendEmail } = require('../utils/mailer');
 
 // =====================================================================
@@ -69,6 +70,16 @@ router.post('/:id/employee-link/:token/sign', (req, res) => {
 // All routes below require authentication
 // =====================================================================
 router.use(authenticateToken);
+
+// POST /api/disciplinary/upload — multipart file upload for disciplinary attachments
+router.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({
+    filename: req.file.filename,
+    path: `/api/uploads/${req.file.filename}`,
+    size: req.file.size
+  });
+});
 
 // GET /api/disciplinary/summary — open actions with monitoring expiring within 30 days
 router.get('/summary', (req, res) => {

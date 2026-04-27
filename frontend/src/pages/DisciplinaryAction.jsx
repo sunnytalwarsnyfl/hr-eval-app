@@ -39,6 +39,18 @@ function statusClass(status) {
   return STATUS_BADGES[status] || 'bg-gray-100 text-gray-700 border border-gray-200'
 }
 
+async function uploadFile(file, endpoint) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  })
+  if (!res.ok) throw new Error('Upload failed')
+  return res.json()
+}
+
 function calcRollOff(dateStr, period = '30 Days') {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -78,6 +90,7 @@ export default function DisciplinaryAction() {
   }
 
   const [form, setForm] = useState(initialForm)
+  const [attachmentFile, setAttachmentFile] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -147,6 +160,19 @@ export default function DisciplinaryAction() {
     setError('')
     setSubmitting(true)
     try {
+      // Upload file first if present
+      let attachment_path = form.attachment_path || ''
+      if (attachmentFile) {
+        try {
+          const uploadRes = await uploadFile(attachmentFile, '/api/disciplinary/upload')
+          attachment_path = uploadRes.path
+        } catch (uploadErr) {
+          setError('File upload failed: ' + uploadErr.message)
+          setSubmitting(false)
+          return
+        }
+      }
+
       // Build violation_types array
       const violationList = form.violations.filter(v => v !== 'Other')
       if (form.violations.includes('Other') && form.other_violation.trim()) {
@@ -181,11 +207,12 @@ export default function DisciplinaryAction() {
         consequence_type: form.consequence_type,
         suspension_days: form.consequence_type === 'Unpaid Suspension' ? parseInt(form.suspension_days || '0', 10) : 0,
         policy_attached: form.policy_attached === 'Yes' ? 1 : 0,
-        attachment_path: form.attachment_path,
+        attachment_path,
         roll_off_date: calcRollOff(form.issuance_date, form.monitoring_period),
       }
       await disciplinaryApi.create(payload)
       setForm(initialForm)
+      setAttachmentFile(null)
       setShowForm(false)
       loadData()
     } catch (err) {
@@ -462,15 +489,18 @@ export default function DisciplinaryAction() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Attachment</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Attachment (photo/PDF)</label>
                       <input
-                        type="text"
-                        name="attachment_path"
-                        value={form.attachment_path}
-                        onChange={handleChange}
-                        placeholder="filename.pdf (file upload coming soon)"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx"
+                        onChange={e => setAttachmentFile(e.target.files[0] || null)}
+                        className="w-full text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
+                      {attachmentFile && (
+                        <span className="text-xs text-gray-500 mt-1 inline-block">
+                          {attachmentFile.name} ({Math.round(attachmentFile.size / 1024)} KB)
+                        </span>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Monitoring Period</label>
@@ -543,6 +573,7 @@ export default function DisciplinaryAction() {
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Monitoring</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Roll-Off</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Attachment</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
@@ -572,6 +603,20 @@ export default function DisciplinaryAction() {
                         </td>
                         <td className="px-4 py-3 text-gray-600">{entry.monitoring_period || '—'}</td>
                         <td className="px-4 py-3 text-gray-600">{entry.roll_off_date || '—'}</td>
+                        <td className="px-4 py-3">
+                          {entry.attachment_path ? (
+                            <a
+                              href={entry.attachment_path}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 text-xs hover:underline"
+                            >
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           {status === 'Pending HR Review' ? (
                             <button

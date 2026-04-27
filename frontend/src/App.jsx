@@ -25,6 +25,7 @@ import SelfEvalPortal from './pages/SelfEvalPortal'
 import EmployeeMyEvals from './pages/EmployeeMyEvals'
 import DisciplinarySignPortal from './pages/DisciplinarySignPortal'
 import NotificationLog from './pages/NotificationLog'
+import EvalCalendar from './pages/EvalCalendar'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -110,6 +111,9 @@ export default function App() {
           } />
           <Route path="/pip/:id" element={
             <ProtectedRoute><PIPDetail /></ProtectedRoute>
+          } />
+          <Route path="/calendar" element={
+            <ProtectedRoute><EvalCalendar /></ProtectedRoute>
           } />
           <Route path="/reports" element={
             <ProtectedRoute><Reports /></ProtectedRoute>

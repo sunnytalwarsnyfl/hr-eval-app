@@ -8,5 +8,7 @@ export const employeesApi = {
   remove: (id) => client.delete(`/employees/${id}`),
   sendInvite: (id) => client.post(`/employees/${id}/invite`),
   inviteSelfEval: (id) => client.post(`/employees/${id}/invite-self-eval`),
+  bulkInviteSelfEval: (employee_ids) => client.post('/employees/bulk/invite-self-eval', { employee_ids }),
+  bulkDeactivate: (employee_ids) => client.post('/employees/bulk/deactivate', { employee_ids }),
   getManagers: () => client.get('/users/managers')
 }

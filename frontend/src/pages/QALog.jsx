@@ -36,6 +36,18 @@ function getIssueMeta(type) {
   return ISSUE_TYPES.find(i => i.type === type)
 }
 
+async function uploadFile(file, endpoint) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  })
+  if (!res.ok) throw new Error('Upload failed')
+  return res.json()
+}
+
 export default function QALog() {
   const [entries, setEntries] = useState([])
   const [employees, setEmployees] = useState([])
@@ -56,6 +68,7 @@ export default function QALog() {
     employee_initials: '',
     manager_initials: '',
   })
+  const [attachmentFile, setAttachmentFile] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -116,6 +129,19 @@ export default function QALog() {
     setError('')
     setSubmitting(true)
     try {
+      // Upload file first if present
+      let attachment_path = null
+      if (attachmentFile) {
+        try {
+          const uploadRes = await uploadFile(attachmentFile, '/api/qa-log/upload')
+          attachment_path = uploadRes.path
+        } catch (uploadErr) {
+          setError('File upload failed: ' + uploadErr.message)
+          setSubmitting(false)
+          return
+        }
+      }
+
       const payload = {
         employee_id: parseInt(form.employee_id),
         facility: form.facility,
@@ -129,6 +155,7 @@ export default function QALog() {
         manager_initials: form.manager_initials,
         points: issuePoints,
         roll_off_date: calcRollOff(form.date_of_incident),
+        attachment_path,
       }
       await qaLogApi.create(payload)
       setForm({
@@ -142,6 +169,7 @@ export default function QALog() {
         employee_initials: '',
         manager_initials: '',
       })
+      setAttachmentFile(null)
       setShowForm(false)
       loadData()
     } catch (err) {
@@ -273,6 +301,20 @@ export default function QALog() {
                       <input type="text" name="manager_initials" value={form.manager_initials} onChange={handleChange} maxLength={5}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Attachment (photo/PDF)</label>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx"
+                        onChange={e => setAttachmentFile(e.target.files[0] || null)}
+                        className="text-sm block w-full file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
+                      {attachmentFile && (
+                        <span className="text-xs text-gray-500 mt-1 inline-block">
+                          Selected: {attachmentFile.name} ({Math.round(attachmentFile.size / 1024)} KB)
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <button type="submit" disabled={submitting}
@@ -308,6 +350,7 @@ export default function QALog() {
                         <th className="text-left px-4 py-3 font-medium text-gray-600">Roll-Off</th>
                         <th className="text-left px-4 py-3 font-medium text-gray-600">Action Required</th>
                         <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Attachment</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -328,6 +371,20 @@ export default function QALog() {
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                 entry.status === 'Complete - Met Expectations' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                               }`}>{entry.status || '—'}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              {entry.attachment_path ? (
+                                <a
+                                  href={entry.attachment_path}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 text-xs hover:underline"
+                                >
+                                  View
+                                </a>
+                              ) : (
+                                <span className="text-gray-400 text-xs">—</span>
+                              )}
                             </td>
                           </tr>
                         )

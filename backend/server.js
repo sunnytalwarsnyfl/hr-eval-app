@@ -38,6 +38,11 @@ app.use('/api/qa-log', require('./routes/qa-log'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/compliance', require('./routes/compliance'));
 
+// Static serve uploaded files (auth-protected)
+const { UPLOAD_DIR } = require('./middleware/upload');
+const { authenticateToken } = require('./middleware/auth');
+app.use('/api/uploads', authenticateToken, express.static(UPLOAD_DIR));
+
 // Runtime migrations
 try {
   const db = getDb();

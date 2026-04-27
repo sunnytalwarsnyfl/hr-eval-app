@@ -443,4 +443,109 @@ router.post('/:id/invite-self-eval', requireRole('admin', 'hr', 'manager'), asyn
   }
 });
 
+// POST /api/employees/bulk/invite-self-eval — send self-eval invites to multiple employees
+router.post('/bulk/invite-self-eval', requireRole('admin', 'hr', 'manager'), async (req, res) => {
+  const db = getDb();
+  const { employee_ids } = req.body;
+  if (!Array.isArray(employee_ids) || !employee_ids.length) {
+    return res.status(400).json({ error: 'employee_ids array required' });
+  }
+
+  const results = [];
+  for (const id of employee_ids) {
+    try {
+      const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+      if (!employee) { results.push({ id, status: 'skipped', reason: 'not found' }); continue; }
+
+      // Manager scope check
+      if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+        results.push({ id, status: 'skipped', reason: 'not in scope' });
+        continue;
+      }
+
+      const targetEmail = employee.work_email || employee.email;
+      if (!targetEmail) {
+        results.push({ id, status: 'skipped', reason: 'no email' });
+        continue;
+      }
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+      // Find or create user
+      let user = db.prepare(`
+        SELECT * FROM users WHERE employee_id = ? OR email = ? LIMIT 1
+      `).get(id, targetEmail);
+
+      if (user) {
+        db.prepare(`
+          UPDATE users
+          SET invite_token = ?, invite_expires_at = ?, invite_used = 0, employee_id = ?
+          WHERE id = ?
+        `).run(token, expiresAt, id, user.id);
+      } else {
+        const placeholderHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+        db.prepare(`
+          INSERT INTO users (name, email, password_hash, role, department,
+                             invite_token, invite_expires_at, invite_used, employee_id)
+          VALUES (?, ?, ?, 'employee', ?, ?, ?, 0, ?)
+        `).run(
+          employee.name, targetEmail, placeholderHash,
+          employee.department || null, token, expiresAt, id
+        );
+      }
+
+      const APP_URL = process.env.APP_URL || '';
+      const link = `${APP_URL}/self-eval/invite/${token}`;
+      const html = `
+        <h2 style="color:#1d4ed8;">SIPS Healthcare — Self-Evaluation Invitation</h2>
+        <p>Hello ${employee.name},</p>
+        <p>You have been invited to complete a self-evaluation as part of your performance review process.</p>
+        <p>Please click the link below to begin. This link is valid for <strong>48 hours</strong>.</p>
+        <p><a href="${link}" style="background:#1d4ed8;color:white;padding:10px 16px;border-radius:6px;text-decoration:none;">Start Self-Evaluation</a></p>
+        <p style="font-size:12px;color:#6b7280;">Or copy this link: ${link}</p>
+      `;
+
+      try {
+        await sendEmail({
+          to: targetEmail,
+          subject: 'Self-Evaluation Invite — SIPS Healthcare',
+          html
+        });
+        results.push({ id, status: 'sent', email: targetEmail });
+      } catch (e) {
+        results.push({ id, status: 'error', error: e.message });
+      }
+    } catch (err) {
+      results.push({ id, status: 'error', error: err.message });
+    }
+  }
+
+  res.json({
+    total: employee_ids.length,
+    sent: results.filter(r => r.status === 'sent').length,
+    skipped: results.filter(r => r.status === 'skipped').length,
+    errors: results.filter(r => r.status === 'error').length,
+    results
+  });
+});
+
+// POST /api/employees/bulk/deactivate — deactivate multiple employees
+router.post('/bulk/deactivate', requireRole('admin', 'hr'), (req, res) => {
+  const db = getDb();
+  const { employee_ids } = req.body;
+  if (!Array.isArray(employee_ids) || !employee_ids.length) {
+    return res.status(400).json({ error: 'employee_ids array required' });
+  }
+
+  let updated = 0;
+  for (const id of employee_ids) {
+    try {
+      const r = db.prepare('UPDATE employees SET active = 0 WHERE id = ?').run(id);
+      updated += r.changes;
+    } catch (_) {}
+  }
+  res.json({ total: employee_ids.length, deactivated: updated });
+});
+
 module.exports = router;

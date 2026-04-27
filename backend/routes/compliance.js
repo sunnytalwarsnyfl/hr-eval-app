@@ -16,7 +16,19 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (employee_id) {
+
+  // Role-based scoping
+  if (req.user.role === 'employee') {
+    if (!req.user.employee_id) return res.json({ data: [] });
+    query += ' AND c.employee_id = ?';
+    params.push(req.user.employee_id);
+  } else if (req.user.role === 'manager') {
+    query += ' AND e.manager_id = ?';
+    params.push(req.user.id);
+  }
+
+  // Allow explicit employee_id filter for non-employee roles only
+  if (employee_id && req.user.role !== 'employee') {
     query += ' AND c.employee_id = ?';
     params.push(employee_id);
   }

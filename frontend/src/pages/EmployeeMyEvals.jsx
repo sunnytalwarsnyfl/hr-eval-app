@@ -2,6 +2,36 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import client from '../api/client'
+import { complianceApi } from '../api/compliance'
+
+function ComplianceStatusPill({ record }) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const exp = record.expiration_date ? new Date(record.expiration_date) : null
+
+  let label = 'Pending'
+  let cls = 'bg-yellow-100 text-yellow-700'
+
+  if (record.renewed_within_deadline === 1) {
+    label = 'On Time'
+    cls = 'bg-green-100 text-green-700'
+  } else if (record.renewed_within_deadline === 0) {
+    label = 'Late'
+    cls = 'bg-red-100 text-red-700'
+  } else if (!record.renewed_date && exp && exp < today) {
+    label = 'Expired'
+    cls = 'bg-red-100 text-red-700'
+  } else if (!record.renewed_date) {
+    label = 'Pending'
+    cls = 'bg-yellow-100 text-yellow-700'
+  }
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>
+      {label}
+    </span>
+  )
+}
 
 function StatusPill({ status }) {
   const styles = {
@@ -24,6 +54,8 @@ export default function EmployeeMyEvals() {
   const { user, setUser } = useAuth()
   const navigate = useNavigate()
   const [evals, setEvals] = useState([])
+  const [compliance, setCompliance] = useState([])
+  const [complianceLoading, setComplianceLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [activeEval, setActiveEval] = useState(null)
   const [activeDetail, setActiveDetail] = useState(null)
@@ -33,7 +65,22 @@ export default function EmployeeMyEvals() {
   const [ackLoading, setAckLoading] = useState(false)
   const [employeeName, setEmployeeName] = useState('')
 
-  useEffect(() => { loadEvals() }, [])
+  useEffect(() => {
+    loadEvals()
+    loadCompliance()
+  }, [])
+
+  async function loadCompliance() {
+    setComplianceLoading(true)
+    try {
+      const res = await complianceApi.list()
+      setCompliance(res.data.data || [])
+    } catch (e) {
+      console.error('Failed to load compliance:', e)
+    } finally {
+      setComplianceLoading(false)
+    }
+  }
 
   async function loadEvals() {
     setLoading(true)
@@ -210,6 +257,57 @@ export default function EmployeeMyEvals() {
                       </tr>
                     )
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* My Compliance Records */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="font-semibold text-gray-800">My Compliance Records</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Hepatitis B, Physical Exam, BLS, Certifications, etc.</p>
+          </div>
+
+          {/* Info card */}
+          <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 text-xs text-blue-800 flex items-start gap-2">
+            <span className="mt-0.5">ℹ️</span>
+            <span>
+              Contact HR to update your compliance records (Hepatitis B, Physical Exam, BLS, Certification).
+            </span>
+          </div>
+
+          {complianceLoading ? (
+            <div className="p-10 text-center text-gray-500 text-sm">Loading compliance records...</div>
+          ) : compliance.length === 0 ? (
+            <div className="p-10 text-center text-gray-500 text-sm">
+              You don't have any compliance records on file yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="text-left px-6 py-3 font-medium">Requirement Type</th>
+                    <th className="text-left px-6 py-3 font-medium">Expiration Date</th>
+                    <th className="text-left px-6 py-3 font-medium">Renewed Date</th>
+                    <th className="text-left px-6 py-3 font-medium">Status</th>
+                    <th className="text-left px-6 py-3 font-medium">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {compliance.map(rec => (
+                    <tr key={rec.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3 font-medium text-gray-800">{rec.requirement_type}</td>
+                      <td className="px-6 py-3 text-gray-600">{rec.expiration_date || '—'}</td>
+                      <td className="px-6 py-3 text-gray-600">{rec.renewed_date || '—'}</td>
+                      <td className="px-6 py-3"><ComplianceStatusPill record={rec} /></td>
+                      <td className="px-6 py-3 text-gray-600 text-xs max-w-xs truncate" title={rec.notes || ''}>
+                        {rec.notes || '—'}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

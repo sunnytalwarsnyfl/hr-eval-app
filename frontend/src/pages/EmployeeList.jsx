@@ -18,6 +18,8 @@ export default function EmployeeList() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   useEffect(() => { loadEmployees() }, [search])
 
@@ -35,7 +37,7 @@ export default function EmployeeList() {
 
   function showToast(message, type = 'success') {
     setToast({ message, type })
-    setTimeout(() => setToast(null), 3500)
+    setTimeout(() => setToast(null), 4500)
   }
 
   async function handleSendInvite(emp, e) {
@@ -47,6 +49,61 @@ export default function EmployeeList() {
       showToast(err.response?.data?.error || 'Failed to send invite', 'error')
     }
   }
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === employees.length && employees.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(employees.map(e => e.id)))
+    }
+  }
+
+  async function handleBulkInvite() {
+    const ids = Array.from(selectedIds)
+    if (!ids.length) return
+    if (!window.confirm(`Send self-evaluation invites to ${ids.length} employee(s)?`)) return
+
+    setBulkLoading(true)
+    try {
+      const res = await employeesApi.bulkInviteSelfEval(ids)
+      const { sent = 0, skipped = 0, errors = 0 } = res.data || {}
+      showToast(`Invites: ${sent} sent, ${skipped} skipped, ${errors} errors`, errors > 0 ? 'error' : 'success')
+      setSelectedIds(new Set())
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Bulk invite failed', 'error')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  async function handleBulkDeactivate() {
+    const ids = Array.from(selectedIds)
+    if (!ids.length) return
+    if (!window.confirm(`Deactivate ${ids.length} employee(s)? They will no longer appear in active lists.`)) return
+
+    setBulkLoading(true)
+    try {
+      const res = await employeesApi.bulkDeactivate(ids)
+      showToast(`${res.data.deactivated} employee(s) deactivated`)
+      setSelectedIds(new Set())
+      loadEmployees()
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Bulk deactivate failed', 'error')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const allSelected = employees.length > 0 && selectedIds.size === employees.length
 
   return (
     <Layout>
@@ -84,6 +141,38 @@ export default function EmployeeList() {
           />
         </div>
 
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-800">
+              {selectedIds.size} selected
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={handleBulkInvite}
+                disabled={bulkLoading}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Send Self-Eval Invite ({selectedIds.size})
+              </button>
+              <button
+                onClick={handleBulkDeactivate}
+                disabled={bulkLoading}
+                className="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                Deactivate ({selectedIds.size})
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                disabled={bulkLoading}
+                className="border border-gray-300 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
           {loading ? (
@@ -95,6 +184,15 @@ export default function EmployeeList() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all"
+                        className="rounded border-gray-300"
+                      />
+                    </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Department</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Job Title</th>
@@ -114,9 +212,18 @@ export default function EmployeeList() {
                     return (
                       <tr
                         key={emp.id}
-                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        className={`hover:bg-gray-50 transition-colors cursor-pointer ${selectedIds.has(emp.id) ? 'bg-blue-50' : ''}`}
                         onClick={() => navigate(`/employees/${emp.id}`)}
                       >
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(emp.id)}
+                            onChange={() => toggleSelect(emp.id)}
+                            aria-label={`Select ${emp.name}`}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
                         <td className="px-4 py-3 font-medium text-gray-900">{emp.name}</td>
                         <td className="px-4 py-3 text-gray-600">{emp.department}</td>
                         <td className="px-4 py-3 text-gray-600">{emp.job_title}</td>

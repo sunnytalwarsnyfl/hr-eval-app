@@ -189,6 +189,59 @@ router.get('/evals-due', (req, res) => {
   res.json({ data });
 });
 
+// GET /api/reports/eval-calendar — anniversaries in upcoming 90 days
+router.get('/eval-calendar', (req, res) => {
+  const db = getDb();
+
+  let query = `
+    SELECT e.id AS employee_id, e.name AS employee_name, e.department, e.belt_level,
+           e.hire_date, e.anniversary_date,
+           u.name AS manager_name
+    FROM employees e
+    LEFT JOIN users u ON e.manager_id = u.id
+    WHERE e.active = 1
+  `;
+  const params = [];
+
+  if (req.user.role === 'manager') {
+    query += ' AND e.manager_id = ?';
+    params.push(req.user.id);
+  }
+
+  const employees = db.prepare(query).all(...params);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
+
+  const triggers = [];
+  for (const emp of employees) {
+    const refDate = emp.anniversary_date || emp.hire_date;
+    if (!refDate) continue;
+    const ref = new Date(refDate);
+    if (isNaN(ref.getTime())) continue;
+
+    const thisYear = new Date(today.getFullYear(), ref.getMonth(), ref.getDate());
+    let target = thisYear < today ? new Date(today.getFullYear() + 1, ref.getMonth(), ref.getDate()) : thisYear;
+
+    const daysUntil = Math.round((target.getTime() - todayMs) / (1000 * 60 * 60 * 24));
+    if (daysUntil >= 0 && daysUntil <= 90) {
+      triggers.push({
+        employee_id: emp.employee_id,
+        employee_name: emp.employee_name,
+        department: emp.department,
+        belt_level: emp.belt_level,
+        manager_name: emp.manager_name,
+        anniversary_date: target.toISOString().split('T')[0],
+        days_until: daysUntil
+      });
+    }
+  }
+
+  triggers.sort((a, b) => a.days_until - b.days_until);
+  res.json({ data: triggers });
+});
+
 // GET /api/reports/score-distribution
 router.get('/score-distribution', (req, res) => {
   const db = getDb();

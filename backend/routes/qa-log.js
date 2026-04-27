@@ -2,8 +2,19 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { upload } = require('../middleware/upload');
 
 router.use(authenticateToken);
+
+// POST /api/qa-log/upload — multipart file upload for QA attachments
+router.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({
+    filename: req.file.filename,
+    path: `/api/uploads/${req.file.filename}`,
+    size: req.file.size
+  });
+});
 
 // QA issue types and their point values (legacy free-text → points, kept for backward compat)
 const QA_ISSUE_POINTS = {

@@ -9,6 +9,7 @@ export default function Layout({ children }) {
   const isManager = user?.role === 'manager'
   const isHrOrAdmin = user?.role === 'hr' || user?.role === 'admin'
   const isAdmin = user?.role === 'admin'
+  const isEmployee = user?.role === 'employee'
 
   async function handleLogout() {
     try {
@@ -110,6 +111,19 @@ export default function Layout({ children }) {
           >
             <span>⚠️</span> PIP Plans
           </NavLink>
+
+          {!isEmployee && (
+            <NavLink
+              to="/calendar"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`
+              }
+            >
+              <span>📆</span> Calendar
+            </NavLink>
+          )}
 
           {(isHrOrAdmin || isManager) && (
             <NavLink

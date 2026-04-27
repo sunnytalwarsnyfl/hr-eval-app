@@ -5,5 +5,6 @@ export const reportsApi = {
   deptScores: (params) => client.get('/reports/dept-scores', { params }),
   evalsDue: () => client.get('/reports/evals-due'),
   scoreDistribution: (params) => client.get('/reports/score-distribution', { params }),
-  pipTracking: () => client.get('/reports/pip-tracking')
+  pipTracking: () => client.get('/reports/pip-tracking'),
+  evalCalendar: () => client.get('/reports/eval-calendar'),
 }
