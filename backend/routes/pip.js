@@ -292,6 +292,38 @@ router.patch('/:id/status', (req, res) => {
   }
 });
 
+// POST /api/pip/:id/extend — set status to Extended
+router.post('/:id/extend', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const { next_pip_date } = req.body;
+  try {
+    db.prepare(`
+      UPDATE pip_plans SET status = 'Extended', type = 'Extension', next_pip_date = COALESCE(?, next_pip_date)
+      WHERE id = ?
+    `).run(next_pip_date || null, id);
+    const updated = db.prepare('SELECT * FROM pip_plans WHERE id = ?').get(id);
+    res.json({ pip: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pip/:id/complete — set status to Complete - Met Expectations
+router.post('/:id/complete', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const { met = true } = req.body;
+  const newStatus = met ? 'Complete - Met Expectations' : 'Incomplete - Did Not Meet';
+  try {
+    db.prepare(`UPDATE pip_plans SET status = ? WHERE id = ?`).run(newStatus, id);
+    const updated = db.prepare('SELECT * FROM pip_plans WHERE id = ?').get(id);
+    res.json({ pip: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/pip/:id
 router.delete('/:id', (req, res) => {
   const db = getDb();

@@ -127,6 +127,43 @@ async function runAttendanceFallback(db) {
   console.log(`[Scheduler] Attendance fallback complete. Notified for ${count} entries.`);
 }
 
+// JOB 3: PIP review date reminders — runs daily at 7 AM
+async function runPipReminders(db) {
+  console.log('[Scheduler] Running PIP reminders...');
+
+  const dueToday = db.prepare(`
+    SELECT pp.id, pp.next_pip_date, pp.status, pp.action_plan,
+           e.name AS employee_name, e.work_email, e.email,
+           u.email AS evaluator_email, u.name AS evaluator_name
+    FROM pip_plans pp
+    JOIN evaluations ev ON pp.evaluation_id = ev.id
+    JOIN employees e ON ev.employee_id = e.id
+    LEFT JOIN users u ON ev.evaluator_id = u.id
+    WHERE pp.status = 'Active' AND pp.next_pip_date = date('now')
+  `).all();
+
+  let count = 0;
+  for (const pip of dueToday) {
+    const recipients = [];
+    if (pip.evaluator_email) recipients.push(pip.evaluator_email);
+    recipients.push('HR@sipsconsults.com');
+
+    const subject = `PIP Review Due Today — ${pip.employee_name}`;
+    const html = `
+      <p>The Performance Improvement Plan for <strong>${pip.employee_name}</strong> is due for review today.</p>
+      <p>Status: ${pip.status}</p>
+      ${pip.action_plan ? `<p>Action Plan: ${pip.action_plan}</p>` : ''}
+      <p>Please log in to update the PIP status.</p>
+    `;
+
+    for (const to of recipients) {
+      try { await sendEmail({ to, subject, html }); } catch(e) { console.error('[Scheduler] PIP email error:', e.message); }
+    }
+    count++;
+  }
+  console.log(`[Scheduler] PIP reminders complete. Sent ${count} reminders.`);
+}
+
 function startJobs(db) {
   // Anniversary check: 6 AM daily
   cron.schedule('0 6 * * *', () => {
@@ -138,13 +175,19 @@ function startJobs(db) {
     runAttendanceFallback(db).catch(e => console.error('[Scheduler] Fallback error:', e));
   });
 
-  console.log('[Scheduler] Jobs started: anniversary (6 AM daily), attendance fallback (every 6 hours)');
+  // PIP reminders: 7 AM daily
+  cron.schedule('0 7 * * *', () => {
+    runPipReminders(db).catch(e => console.error('[Scheduler] PIP error:', e));
+  });
+
+  console.log('[Scheduler] Jobs started: anniversary (6 AM), attendance fallback (every 6h), PIP reminders (7 AM)');
 }
 
 // Allow manual trigger via API for admins/testing
 async function triggerNow(db, jobName) {
   if (jobName === 'anniversary') return runAnniversaryCheck(db);
   if (jobName === 'attendance') return runAttendanceFallback(db);
+  if (jobName === 'pip-reminders' || jobName === 'pip') return runPipReminders(db);
   throw new Error('Unknown job: ' + jobName);
 }
 

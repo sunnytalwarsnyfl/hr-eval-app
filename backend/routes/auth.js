@@ -62,6 +62,28 @@ router.post('/login', (req, res) => {
   });
 });
 
+// POST /api/auth/refresh — refreshes JWT cookie if current one is still valid
+router.post('/refresh', authenticateToken, (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT id, name, email, role, department, employee_id FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const token = jwt.sign(
+    { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department, employee_id: user.employee_id },
+    JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 8 * 60 * 60 * 1000
+  });
+
+  res.json({ user });
+});
+
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
   // Try to extract user from token cookie for audit

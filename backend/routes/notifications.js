@@ -318,4 +318,74 @@ router.get('/log', requireRole('admin', 'hr'), (req, res) => {
   }
 });
 
+// GET /api/notifications — list (admin/HR see all, manager sees team's)
+router.get('/', (req, res) => {
+  const db = getDb();
+  const { limit = 50 } = req.query;
+
+  let query = `
+    SELECT n.*, e.name AS employee_name
+    FROM eval_notifications n
+    LEFT JOIN employees e ON n.employee_id = e.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  } else if (req.user.role === 'employee') {
+    query += ` AND e.id = ?`;
+    params.push(req.user.employee_id || -1);
+  }
+
+  query += ` ORDER BY n.sent_at DESC LIMIT ?`;
+  params.push(Number(limit));
+
+  try {
+    const rows = db.prepare(query).all(...params);
+    res.json({ data: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/notifications/pending — overdue evals + upcoming triggers
+router.get('/pending', (req, res) => {
+  const db = getDb();
+
+  try {
+    let scope = '';
+    const params = [];
+    if (req.user.role === 'manager') {
+      scope = ' AND e.manager_id = ?';
+      params.push(req.user.id);
+    }
+
+    const overdueEvals = db.prepare(`
+      SELECT e.id, e.name, e.department, MAX(ev.evaluation_date) AS last_eval_date
+      FROM employees e
+      LEFT JOIN evaluations ev ON ev.employee_id = e.id AND ev.status != 'Draft'
+      WHERE e.active = 1 ${scope}
+      GROUP BY e.id
+      HAVING last_eval_date IS NULL OR last_eval_date < date('now', '-12 months')
+      LIMIT 100
+    `).all(...params);
+
+    const activePips = db.prepare(`
+      SELECT pp.id, pp.next_pip_date, pp.status, e.name AS employee_name
+      FROM pip_plans pp
+      JOIN evaluations ev ON pp.evaluation_id = ev.id
+      JOIN employees e ON ev.employee_id = e.id
+      WHERE pp.status = 'Active'${scope}
+      ORDER BY pp.next_pip_date ASC
+      LIMIT 100
+    `).all(...params);
+
+    res.json({ overdue_evals: overdueEvals, active_pips: activePips });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

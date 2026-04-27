@@ -16,7 +16,7 @@ async function sendEmail({ to, subject, html }) {
     return { mocked: true };
   }
   return transporter.sendMail({
-    from: `"SIPS HR System" <${process.env.SMTP_USER}>`,
+    from: `"${process.env.FROM_NAME || 'SIPS Healthcare HR'}" <${process.env.FROM_EMAIL || process.env.SMTP_USER || 'hr@sipsconsults.com'}>`,
     to,
     subject,
     html

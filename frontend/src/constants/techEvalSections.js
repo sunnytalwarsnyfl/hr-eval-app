@@ -100,15 +100,6 @@ export const TECH_EVAL_SECTIONS = [
     ],
     scoring: "tech_standard"
   },
-  {
-    name: "Education & Training",
-    items: [
-      "White Belt Competent",
-      "Yellow Belt Competent",
-      "Green Belt Competent",
-    ],
-    scoring: "tech_standard"
-  },
 ];
 
 export const TECH_SCORE_OPTIONS = {

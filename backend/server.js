@@ -62,6 +62,13 @@ try {
     console.log('Migration: added facility_id to employees');
   }
 
+  // departments.facility_id
+  const deptCols = db.prepare("PRAGMA table_info(departments)").all();
+  if (!deptCols.find(c => c.name === 'facility_id')) {
+    db.exec(`ALTER TABLE departments ADD COLUMN facility_id INTEGER REFERENCES facilities(id)`);
+    console.log('Migration: added facility_id to departments');
+  }
+
   // Seed default departments if table is empty
   const deptCount = db.prepare('SELECT COUNT(*) as c FROM departments').get();
   if (deptCount.c === 0) {
@@ -141,6 +148,63 @@ try {
     console.log('Migration: added employee anniversary_date, work_email, phone_number');
   }
 
+  // Drop legacy email/tech_level columns from employees and add CHECK constraints
+  const empTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'").get()?.sql || '';
+  const needsEmpRebuild = empTableSql.includes('email TEXT UNIQUE NOT NULL') || empTableSql.includes('tech_level') || !empTableSql.includes("CHECK(employment_type IN");
+  if (needsEmpRebuild) {
+    try {
+      db.pragma('foreign_keys = OFF');
+      db.exec('BEGIN TRANSACTION');
+      db.exec(`CREATE TABLE employees_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        hire_date DATE NOT NULL,
+        department TEXT NOT NULL,
+        job_title TEXT NOT NULL,
+        manager_id INTEGER REFERENCES users(id),
+        active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        facility_id INTEGER REFERENCES facilities(id),
+        phone TEXT,
+        employment_type TEXT DEFAULT 'Permanent' CHECK(employment_type IN ('Permanent','Temporary')),
+        is_leadership INTEGER DEFAULT 0,
+        is_evaluator INTEGER DEFAULT 0,
+        belt_level TEXT CHECK(belt_level IS NULL OR belt_level IN ('White','Yellow','Green','Blue','Brown','Black')),
+        anniversary_date DATE,
+        work_email TEXT,
+        phone_number TEXT
+      )`);
+      // Backfill: prefer work_email over email; prefer belt_level over tech_level mapping; keep all data
+      const existingCols = db.prepare("PRAGMA table_info(employees)").all().map(c => c.name);
+      const cols = ['id','name','hire_date','department','job_title','manager_id','active','created_at'];
+      const optionalCols = ['facility_id','phone','employment_type','is_leadership','is_evaluator','belt_level','anniversary_date','work_email','phone_number'];
+      optionalCols.forEach(c => { if (existingCols.includes(c)) cols.push(c); });
+
+      const selectCols = cols.map(c => {
+        if (c === 'work_email' && existingCols.includes('email')) {
+          return `COALESCE(work_email, email) AS work_email`;
+        }
+        if (c === 'belt_level' && existingCols.includes('tech_level')) {
+          return `COALESCE(belt_level, CASE tech_level WHEN 'Tech 1' THEN 'White' WHEN 'Tech 3' THEN 'Yellow' WHEN 'Tech 4' THEN 'Green' WHEN 'QA Tech' THEN 'Blue' ELSE NULL END) AS belt_level`;
+        }
+        if (c === 'employment_type') {
+          return `COALESCE(employment_type, 'Permanent') AS employment_type`;
+        }
+        return c;
+      });
+      db.exec(`INSERT INTO employees_new (${cols.join(',')}) SELECT ${selectCols.join(',')} FROM employees`);
+      db.exec('DROP TABLE employees');
+      db.exec('ALTER TABLE employees_new RENAME TO employees');
+      db.exec('COMMIT');
+      db.pragma('foreign_keys = ON');
+      console.log('Migration: rebuilt employees table — dropped legacy email/tech_level, added CHECK constraints');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      db.pragma('foreign_keys = ON');
+      console.error('Employees rebuild error:', e.message);
+    }
+  }
+
   // users: invite_token, invite_expires_at, invite_used, employee_id, last_login
   const userCols = db.prepare("PRAGMA table_info(users)").all();
   if (!userCols.find(c => c.name === 'invite_token')) {
@@ -207,6 +271,72 @@ try {
 
   if (!discCols.find(c => c.name === 'employee_sign_token')) {
     db.exec(`ALTER TABLE disciplinary_actions ADD COLUMN employee_sign_token TEXT`);
+  }
+
+  // Fix disciplinary_actions status CHECK constraint
+  const discTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='disciplinary_actions'").get()?.sql || '';
+  const needsDiscRebuild = discTableSql.includes("CHECK(status IN ('Complete - Met Expectations','Incomplete'))");
+  if (needsDiscRebuild) {
+    try {
+      db.pragma('foreign_keys = OFF');
+      db.exec('BEGIN TRANSACTION');
+
+      // Get existing columns
+      const existingCols = db.prepare("PRAGMA table_info(disciplinary_actions)").all().map(c => c.name);
+
+      // Build new table — superset of existing schema with relaxed status CHECK
+      db.exec(`CREATE TABLE disciplinary_actions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id INTEGER NOT NULL REFERENCES employees(id),
+        date_of_incident DATE NOT NULL,
+        issue TEXT,
+        details TEXT,
+        accumulated_points INTEGER DEFAULT 0,
+        issuance_date DATE,
+        monitoring_period TEXT DEFAULT '30 Days',
+        type TEXT DEFAULT 'New',
+        status TEXT DEFAULT 'Pending HR Review',
+        roll_off_date DATE,
+        next_step TEXT,
+        notification_sent INTEGER DEFAULT 0,
+        created_by INTEGER REFERENCES users(id),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        facility_id INTEGER REFERENCES facilities(id),
+        initiated_by INTEGER REFERENCES users(id),
+        violation_types TEXT,
+        action_level TEXT,
+        improvement_plan TEXT,
+        consequence_if_continued TEXT,
+        consequence_type TEXT,
+        suspension_days INTEGER,
+        policy_attached INTEGER DEFAULT 0,
+        attachment_path TEXT,
+        employee_statement TEXT,
+        employee_signature TEXT,
+        employee_signed_at DATETIME,
+        manager_signature TEXT,
+        manager_signed_at DATETIME,
+        hr_approved_by INTEGER REFERENCES users(id),
+        hr_approved_at DATETIME,
+        employee_notified_at DATETIME,
+        acknowledged_at DATETIME,
+        employee_sign_token TEXT
+      )`);
+
+      // Copy only columns that exist in the old table
+      const newCols = db.prepare("PRAGMA table_info(disciplinary_actions_new)").all().map(c => c.name);
+      const commonCols = newCols.filter(c => existingCols.includes(c));
+      db.exec(`INSERT INTO disciplinary_actions_new (${commonCols.join(',')}) SELECT ${commonCols.join(',')} FROM disciplinary_actions`);
+      db.exec('DROP TABLE disciplinary_actions');
+      db.exec('ALTER TABLE disciplinary_actions_new RENAME TO disciplinary_actions');
+      db.exec('COMMIT');
+      db.pragma('foreign_keys = ON');
+      console.log('Migration: rebuilt disciplinary_actions — relaxed status CHECK to allow Pending HR Review/Approved/Active/Extended');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      db.pragma('foreign_keys = ON');
+      console.error('Disciplinary rebuild error:', e.message);
+    }
   }
 
   // pip_plans new columns

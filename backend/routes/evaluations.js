@@ -231,6 +231,17 @@ router.put('/:id', (req, res) => {
     id
   );
 
+  // If transitioning from Draft to Submitted (manager-initiated formal eval), close any open self-eval window
+  if (existing.status === 'Draft' && status && status !== 'Draft' && existing.evaluation_type !== 'Self-Evaluation') {
+    try {
+      db.prepare(`
+        UPDATE users
+        SET invite_used = 1, invite_token = NULL
+        WHERE employee_id = ? AND invite_used = 0
+      `).run(existing.employee_id);
+    } catch (_) {}
+  }
+
   if (sections && sections.length > 0) {
     // Delete existing sections and items
     const oldSections = db.prepare('SELECT id FROM eval_sections WHERE evaluation_id = ?').all(id);
@@ -325,7 +336,80 @@ router.patch('/:id/acknowledge', (req, res) => {
   `).get(id);
 
   try { audit(req, 'acknowledge', 'evaluation', Number(id)); } catch (_) {}
+
+  // Notify HR that employee has acknowledged
+  try {
+    const { sendEmail } = require('../utils/mailer');
+    sendEmail({
+      to: 'HR@sipsconsults.com',
+      subject: `Evaluation Acknowledged — ${updated.employee_name}`,
+      html: `
+        <p><strong>${updated.employee_name}</strong> has acknowledged their ${updated.evaluation_type} evaluation.</p>
+        <p>Acknowledged by: ${acknowledged_by}</p>
+        <p>The evaluation is now complete and on file.</p>
+      `
+    }).catch(err => console.error('eval_acknowledged email error:', err.message));
+  } catch (_) {}
+
   res.json({ evaluation: updated });
+});
+
+// POST /api/evaluations/:id/submit — explicit submit endpoint (sets status = Submitted)
+router.post('/:id/submit', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const evaluation = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+  if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
+  if (evaluation.status === 'Submitted' || evaluation.status === 'Acknowledged') {
+    return res.status(400).json({ error: `Already ${evaluation.status.toLowerCase()}` });
+  }
+
+  try {
+    db.prepare(`UPDATE evaluations SET status = 'Submitted', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
+
+    // If this is a manager-initiated formal eval, close any open self-eval window for this employee
+    // by canceling any unused self-eval invites (mark invite_used = 1)
+    try {
+      db.prepare(`
+        UPDATE users
+        SET invite_used = 1, invite_token = NULL
+        WHERE employee_id = ? AND invite_used = 0
+      `).run(evaluation.employee_id);
+    } catch (_) {}
+
+    const updated = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+
+    // Send acknowledgment request to employee
+    try {
+      const fullEval = db.prepare(`
+        SELECT ev.*, e.name AS employee_name, e.work_email, e.email
+        FROM evaluations ev
+        JOIN employees e ON ev.employee_id = e.id
+        WHERE ev.id = ?
+      `).get(id);
+      const empEmail = fullEval?.work_email || fullEval?.email;
+      if (empEmail) {
+        const { sendEmail } = require('../utils/mailer');
+        const appUrl = process.env.APP_URL || '';
+        sendEmail({
+          to: empEmail,
+          subject: 'Performance Evaluation — Acknowledgment Required',
+          html: `
+            <p>Hi ${fullEval.employee_name},</p>
+            <p>Your ${fullEval.evaluation_type} evaluation has been submitted and is awaiting your acknowledgment.</p>
+            <p>Score: ${fullEval.total_score} / ${fullEval.max_score}${fullEval.passed === 1 ? ' (PASS)' : fullEval.passed === 0 ? ' (FAIL)' : ''}</p>
+            <p>Please log in to <a href="${appUrl}/evaluations/${id}">review and acknowledge your evaluation</a>.</p>
+            <p>SIPS Healthcare HR</p>
+          `
+        }).catch(err => console.error('eval_acknowledgment_request error:', err.message));
+      }
+    } catch (_) {}
+
+    res.json({ evaluation: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PATCH /api/evaluations/:id/hr-review — HR fills post-self-eval data

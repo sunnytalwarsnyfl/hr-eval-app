@@ -44,7 +44,7 @@ router.get('/', (req, res) => {
   }
 
   if (search) {
-    query += ` AND (e.name LIKE ? OR e.email LIKE ? OR e.department LIKE ?)`;
+    query += ` AND (e.name LIKE ? OR e.work_email LIKE ? OR e.department LIKE ?)`;
     const like = `%${search}%`;
     params.push(like, like, like);
   }
@@ -65,6 +65,63 @@ router.get('/', (req, res) => {
 
   const employees = db.prepare(query).all(...params);
   res.json({ employees });
+});
+
+// GET /api/employees/leaders — employees where is_leadership = 1
+router.get('/leaders', (req, res) => {
+  const db = getDb();
+  try {
+    const leaders = db.prepare(`
+      SELECT id, name, work_email, department, job_title, facility_id
+      FROM employees
+      WHERE is_leadership = 1 AND active = 1
+      ORDER BY name ASC
+    `).all();
+    res.json({ leaders, employees: leaders });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/employees/by-manager/:managerId — list employees assigned to a specific manager
+router.get('/by-manager/:managerId', (req, res) => {
+  const db = getDb();
+  const { managerId } = req.params;
+
+  // Authorize: admin/hr can see any; manager can only see their own assignment
+  if (req.user.role === 'manager' && Number(managerId) !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const rows = db.prepare(`
+      SELECT e.*, f.name AS facility_name, u.name AS manager_name
+      FROM employees e
+      LEFT JOIN facilities f ON e.facility_id = f.id
+      LEFT JOIN users u ON e.manager_id = u.id
+      WHERE e.manager_id = ? AND e.active = 1
+      ORDER BY e.name
+    `).all(managerId);
+    res.json({ employees: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/employees/evaluators — list employees who can evaluate (is_evaluator = 1)
+router.get('/evaluators', (req, res) => {
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT id, name, work_email, department, job_title, belt_level
+      FROM employees
+      WHERE active = 1 AND is_evaluator = 1
+      ORDER BY name
+    `).all();
+    res.json({ evaluators: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/employees/:id
@@ -104,37 +161,22 @@ router.get('/:id', (req, res) => {
   res.json({ employee, evaluations, pipPlans });
 });
 
-// GET /api/employees/leaders — employees where is_leadership = 1
-router.get('/leaders', (req, res) => {
-  const db = getDb();
-  try {
-    const leaders = db.prepare(`
-      SELECT id, name, email, department, job_title, facility_id
-      FROM employees
-      WHERE is_leadership = 1 AND active = 1
-      ORDER BY name ASC
-    `).all();
-    res.json({ leaders });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
   const {
-    name, email, hire_date, department, job_title, tech_level,
+    name, email, hire_date, department, job_title,
     manager_id, facility_id, phone, employment_type,
     is_leadership, is_evaluator, belt_level,
     work_email, phone_number, anniversary_date
   } = req.body;
 
-  if (!name || !email || !hire_date || !department || !job_title) {
+  if (!name || !hire_date || !department || !job_title) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  // work_email takes priority over email when both provided; phone_number takes priority over phone
+  // work_email takes priority over email (legacy field) when both provided;
+  // phone_number takes priority over phone
   const finalWorkEmail = work_email || email || null;
   const finalPhoneNumber = phone_number || phone || null;
   const finalAnniversaryDate = anniversary_date || hire_date;
@@ -142,15 +184,15 @@ router.post('/', (req, res) => {
   try {
     const result = db.prepare(`
       INSERT INTO employees (
-        name, email, hire_date, department, job_title, tech_level,
+        name, hire_date, department, job_title,
         manager_id, facility_id, phone, employment_type,
         is_leadership, is_evaluator, belt_level,
         work_email, phone_number, anniversary_date
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      name, email, hire_date, department, job_title,
-      tech_level || null, manager_id || null, facility_id || null,
+      name, hire_date, department, job_title,
+      manager_id || null, facility_id || null,
       phone || null, employment_type || 'Permanent',
       is_leadership ? 1 : 0, is_evaluator ? 1 : 0, belt_level || null,
       finalWorkEmail, finalPhoneNumber, finalAnniversaryDate
@@ -172,7 +214,7 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
   const {
-    name, email, hire_date, department, job_title, tech_level,
+    name, email, hire_date, department, job_title,
     manager_id, facility_id, active, phone, employment_type,
     is_leadership, is_evaluator, belt_level,
     work_email, phone_number, anniversary_date
@@ -181,11 +223,11 @@ router.put('/:id', (req, res) => {
   const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-  // work_email priority: explicit work_email > explicit email > existing work_email > existing email
+  // work_email priority: explicit work_email > explicit email (legacy) > existing work_email
   let finalWorkEmail;
   if (work_email !== undefined) finalWorkEmail = work_email;
   else if (email !== undefined) finalWorkEmail = email;
-  else finalWorkEmail = employee.work_email || employee.email;
+  else finalWorkEmail = employee.work_email;
 
   // phone_number priority: explicit phone_number > explicit phone > existing phone_number > existing phone
   let finalPhoneNumber;
@@ -202,18 +244,16 @@ router.put('/:id', (req, res) => {
   try {
     db.prepare(`
       UPDATE employees
-      SET name = ?, email = ?, hire_date = ?, department = ?, job_title = ?,
-          tech_level = ?, manager_id = ?, facility_id = ?, active = ?,
+      SET name = ?, hire_date = ?, department = ?, job_title = ?,
+          manager_id = ?, facility_id = ?, active = ?,
           phone = ?, employment_type = ?, is_leadership = ?, is_evaluator = ?, belt_level = ?,
           work_email = ?, phone_number = ?, anniversary_date = ?
       WHERE id = ?
     `).run(
       name || employee.name,
-      email || employee.email,
       hire_date || employee.hire_date,
       department || employee.department,
       job_title || employee.job_title,
-      tech_level !== undefined ? tech_level : employee.tech_level,
       manager_id !== undefined ? manager_id : employee.manager_id,
       facility_id !== undefined ? facility_id : employee.facility_id,
       active !== undefined ? (active ? 1 : 0) : employee.active,

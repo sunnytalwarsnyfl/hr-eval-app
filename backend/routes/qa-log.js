@@ -91,6 +91,43 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/qa-log/employee/:employeeId/points — active QA points
+router.get('/employee/:employeeId/points', (req, res) => {
+  const db = getDb();
+  const { employeeId } = req.params;
+
+  // Scope checks (same pattern)
+  if (req.user.role === 'employee' && Number(employeeId) !== req.user.employee_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (req.user.role === 'manager') {
+    const emp = db.prepare('SELECT manager_id FROM employees WHERE id = ?').get(employeeId);
+    if (!emp || emp.manager_id !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+
+  try {
+    const entries = db.prepare(`
+      SELECT id, date_of_incident, issue_type, issue, issue_points, accumulated_points, roll_off_date, action_taken, status,
+             CASE WHEN roll_off_date > date('now') THEN 1 ELSE 0 END AS is_active
+      FROM qa_log
+      WHERE employee_id = ?
+      ORDER BY date_of_incident DESC
+    `).all(employeeId);
+
+    const totals = db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN issue_points IS NOT NULL THEN issue_points ELSE accumulated_points END), 0) AS active_points
+      FROM qa_log
+      WHERE employee_id = ? AND roll_off_date > date('now')
+    `).get(employeeId);
+
+    res.json({ entries, active_points: totals.active_points });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/qa-log/:id
 router.get('/:id', (req, res) => {
   const db = getDb();
@@ -209,6 +246,25 @@ router.post('/', (req, res) => {
           console.log(`[EMAIL MOCK] QA notification to manager for employee ${employee_id}`);
         }
       }
+    }
+
+    // QA threshold alert to HR when accumulated >= 6
+    if (disciplinaryTriggered) {
+      try {
+        const employeeForAlert = db.prepare('SELECT name, work_email, email FROM employees WHERE id = ?').get(employee_id);
+        const { sendEmail } = require('../utils/mailer');
+        sendEmail({
+          to: 'HR@sipsconsults.com',
+          subject: `🚨 QA Threshold Alert — ${employeeForAlert?.name}`,
+          html: `
+            <p><strong>${employeeForAlert?.name}</strong> has accumulated <strong>${accumulatedTotal} QA points</strong>.</p>
+            <p>Recommended action: <strong>${finalActionTaken || 'Review required'}</strong></p>
+            <p>This automated alert is triggered when an employee reaches 6 or more accumulated QA points.</p>
+            <p>Please initiate disciplinary action if not already in progress.</p>
+            <p>SIPS Healthcare QA System</p>
+          `
+        }).catch(err => console.error('qa_threshold_alert error:', err.message));
+      } catch (e) { /* ignore */ }
     }
 
     try { audit(req, 'create', 'qa_log', entry.id, { issue_type, employee_id }); } catch (_) {}

@@ -27,6 +27,7 @@ export default function EditEmployee() {
     name: '',
     email: '',
     hire_date: '',
+    anniversary_date: '',
     department: '',
     job_title: '',
     belt_level: '',
@@ -53,6 +54,7 @@ export default function EditEmployee() {
           name: emp.name || '',
           email: emp.email || '',
           hire_date: emp.hire_date || '',
+          anniversary_date: emp.anniversary_date || emp.hire_date || '',
           department: emp.department || '',
           job_title: emp.job_title || '',
           belt_level: emp.belt_level || emp.tech_level || '',
@@ -90,6 +92,7 @@ export default function EditEmployee() {
       const payload = {
         ...form,
         belt_level: form.belt_level || null,
+        anniversary_date: form.anniversary_date || form.hire_date || null,
         manager_id: form.manager_id ? parseInt(form.manager_id) : null,
         facility_id: form.facility_id ? parseInt(form.facility_id) : null,
         active: form.active ? 1 : 0,
@@ -185,6 +188,19 @@ export default function EditEmployee() {
                   onChange={handleChange}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Anniversary Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Anniversary Date</label>
+                <input
+                  type="date"
+                  name="anniversary_date"
+                  value={form.anniversary_date}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Defaults to Hire Date if blank — used for evaluation triggers.</p>
               </div>
 
               {/* Department */}

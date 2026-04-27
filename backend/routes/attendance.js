@@ -84,6 +84,43 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/attendance/employee/:employeeId/points — active points for a specific employee
+router.get('/employee/:employeeId/points', (req, res) => {
+  const db = getDb();
+  const { employeeId } = req.params;
+
+  // Scope: employee can only see own; manager their team; admin/hr all
+  if (req.user.role === 'employee' && Number(employeeId) !== req.user.employee_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (req.user.role === 'manager') {
+    const emp = db.prepare('SELECT manager_id FROM employees WHERE id = ?').get(employeeId);
+    if (!emp || emp.manager_id !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+
+  try {
+    const entries = db.prepare(`
+      SELECT id, date_of_occurrence, occurrence_code, occurrence_type, points, accumulated_points, roll_off_date,
+             CASE WHEN roll_off_date > date('now') THEN 1 ELSE 0 END AS is_active
+      FROM attendance_log
+      WHERE employee_id = ?
+      ORDER BY date_of_occurrence DESC
+    `).all(employeeId);
+
+    const totals = db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN points IS NOT NULL THEN points ELSE accumulated_points END), 0) AS active_points
+      FROM attendance_log
+      WHERE employee_id = ? AND roll_off_date > date('now')
+    `).get(employeeId);
+
+    res.json({ entries, active_points: totals.active_points });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/attendance/:id — single entry
 router.get('/:id', (req, res) => {
   const db = getDb();
@@ -165,6 +202,32 @@ router.post('/', (req, res) => {
 
     const entry = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(result.lastInsertRowid);
     try { audit(req, 'create', 'attendance', entry.id, { occurrence_code, employee_id }); } catch (_) {}
+
+    // Send notification to the employee about the new attendance entry
+    try {
+      const employee = db.prepare('SELECT name, work_email, email FROM employees WHERE id = ?').get(employee_id);
+      const empEmail = employee?.work_email || employee?.email;
+      if (empEmail) {
+        const { sendEmail } = require('../utils/mailer');
+        sendEmail({
+          to: empEmail,
+          subject: 'New Attendance Entry — Please Review',
+          html: `
+            <p>Hi ${employee.name},</p>
+            <p>An attendance entry has been logged on your record:</p>
+            <ul>
+              <li>Date: ${date_of_occurrence}</li>
+              <li>Code: ${occurrence_code || occurrence_type || 'N/A'}</li>
+              <li>Points: ${points}</li>
+              ${description ? `<li>Description: ${description}</li>` : ''}
+            </ul>
+            <p>Please log in to review and acknowledge this entry. If you do not acknowledge within 48 hours, your manager and HR will be notified.</p>
+            <p>SIPS Healthcare HR</p>
+          `
+        }).catch(err => console.error('attendance_entry email error:', err.message));
+      }
+    } catch (e) { /* ignore */ }
+
     res.status(201).json({ data: entry, accumulated_total: newAccumulated });
   } catch (err) {
     res.status(500).json({ error: err.message });
