@@ -5,7 +5,17 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: '../backend/public',
-    emptyOutDir: true
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-charts': ['recharts'],
+          'vendor-pdf': ['jspdf', 'jspdf-autotable', 'html2canvas'],
+        }
+      }
+    }
   },
   server: {
     proxy: {

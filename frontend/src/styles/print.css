@@ -1,0 +1,99 @@
+/* Print-only styles */
+@media print {
+  /* Hide UI chrome */
+  aside,
+  header,
+  nav,
+  .no-print,
+  button:not(.print-keep),
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Reset layout */
+  body, html, #root, main {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  main {
+    overflow: visible !important;
+  }
+
+  /* Force black-on-white text for readability */
+  body {
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Container expansion */
+  .max-w-4xl, .max-w-5xl, .max-w-3xl, .max-w-2xl, .max-w-xl {
+    max-width: 100% !important;
+  }
+
+  /* Print-specific page break helpers */
+  .print-page-break {
+    page-break-before: always;
+  }
+
+  .print-keep-together {
+    page-break-inside: avoid;
+  }
+
+  /* Show URL after links */
+  a[href]:not(.no-print-url):after {
+    content: " (" attr(href) ")";
+    font-size: 10pt;
+    color: #666;
+  }
+
+  /* Print signature blocks should remain visible */
+  .signature-block {
+    border-top: 1px solid #000 !important;
+    margin-top: 30pt;
+    padding-top: 5pt;
+  }
+
+  /* Tables */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  th, td {
+    border: 1px solid #ccc;
+    padding: 4pt 6pt;
+  }
+
+  /* Headings */
+  h1, h2, h3 { color: #000; }
+
+  /* Card styling becomes plain */
+  .bg-white,
+  .bg-blue-50,
+  .bg-green-50,
+  .bg-yellow-50,
+  .bg-red-50,
+  .bg-gray-50 {
+    background: white !important;
+    border: 1px solid #ddd !important;
+  }
+
+  /* Button replacement */
+  button {
+    display: none !important;
+  }
+}
+
+/* Print preview header (visible only when printing) */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .print-only {
+    display: block !important;
+  }
+}

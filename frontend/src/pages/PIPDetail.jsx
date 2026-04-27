@@ -120,9 +120,14 @@ export default function PIPDetail() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Print-only header */}
+        <div className="print-only mb-6">
+          <h1 className="text-2xl font-bold">SIPS Healthcare — Performance Improvement Plan</h1>
+          <p className="text-sm text-gray-600 mt-1">Confidential — Internal Use Only</p>
+        </div>
         {/* Toast */}
         {toast && (
-          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium no-print ${
             toast.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'
           }`}>
             {toast.message}
@@ -132,7 +137,7 @@ export default function PIPDetail() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <button onClick={() => navigate('/pip')} className="text-sm text-gray-500 hover:text-gray-700 mb-2 block">
+            <button onClick={() => navigate('/pip')} className="text-sm text-gray-500 hover:text-gray-700 mb-2 block no-print">
               ← Back to PIPs
             </button>
             <h1 className="text-2xl font-bold text-gray-900">PIP — {pip.employee_name}</h1>
@@ -142,6 +147,12 @@ export default function PIPDetail() {
             <span className={`text-sm px-3 py-1 rounded-full font-medium ${statusBadge[pip.status] || 'bg-gray-100 text-gray-600'}`}>
               {pip.status || 'Active'}
             </span>
+            <button
+              onClick={() => window.print()}
+              className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 no-print"
+            >
+              🖨️ Print
+            </button>
           </div>
         </div>
 
@@ -370,7 +381,7 @@ export default function PIPDetail() {
 
         {/* Status update actions */}
         {!isEditing && (
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="bg-white rounded-xl border border-gray-200 p-5 no-print">
             <h2 className="font-semibold text-gray-800 mb-3">Update Status</h2>
             <div className="flex items-center gap-3 flex-wrap">
               {pip.status !== 'Complete - Met Expectations' && (

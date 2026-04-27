@@ -145,15 +145,20 @@ export default function EvaluationDetail() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Print-only header */}
+        <div className="print-only mb-6">
+          <h1 className="text-2xl font-bold">SIPS Healthcare — Performance Evaluation</h1>
+          <p className="text-sm text-gray-600 mt-1">Confidential — Internal Use Only</p>
+        </div>
         {hrToast && (
-          <div className={`rounded-lg p-3 text-sm ${hrToast.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          <div className={`rounded-lg p-3 text-sm no-print ${hrToast.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
             {hrToast.message}
           </div>
         )}
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <button onClick={() => navigate('/evaluations')} className="text-sm text-gray-500 hover:text-gray-700 mb-2 block">
+            <button onClick={() => navigate('/evaluations')} className="text-sm text-gray-500 hover:text-gray-700 mb-2 block no-print">
               ← Back to Evaluations
             </button>
             <h1 className="text-2xl font-bold text-gray-900">{evalData.employee_name}</h1>
@@ -161,13 +166,19 @@ export default function EvaluationDetail() {
               {evalData.evaluation_type} • {evalData.evaluation_date} • by {evalData.evaluator_name}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 no-print">
             <StatusBadge status={evalData.status} size="md" />
             <button
               onClick={handleDownloadPDF}
-              className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2"
+              className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 no-print"
             >
               📄 Download PDF
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 no-print"
+            >
+              🖨️ Print
             </button>
           </div>
         </div>
@@ -317,7 +328,7 @@ export default function EvaluationDetail() {
 
         {/* HR Review — form */}
         {showHrReviewSection && (
-          <div className="bg-purple-50 rounded-xl border border-purple-200 p-6">
+          <div className="bg-purple-50 rounded-xl border border-purple-200 p-6 no-print">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-purple-800">HR Review</h2>
               {!hrFormOpen && (
@@ -444,7 +455,7 @@ export default function EvaluationDetail() {
 
         {/* Acknowledgment section */}
         {evalData.status === 'Submitted' && (
-          <div className="bg-blue-50 rounded-xl border border-blue-200 p-6">
+          <div className="bg-blue-50 rounded-xl border border-blue-200 p-6 no-print">
             <h2 className="font-semibold text-blue-800 mb-3">Employee Acknowledgment</h2>
             <p className="text-sm text-gray-600 mb-4">Type your full name to acknowledge this evaluation.</p>
             <div className="flex gap-3">

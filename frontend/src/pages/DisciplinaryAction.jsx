@@ -67,6 +67,7 @@ export default function DisciplinaryAction() {
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [printEntry, setPrintEntry] = useState(null)
 
   const initialForm = {
     employee_id: '',
@@ -232,6 +233,16 @@ export default function DisciplinaryAction() {
     }
   }
 
+  function handlePrintRow(entry) {
+    setPrintEntry(entry)
+    // Wait a tick for the print-only block to render
+    setTimeout(() => {
+      window.print()
+      // Reset after print dialog closes
+      setTimeout(() => setPrintEntry(null), 500)
+    }, 100)
+  }
+
   function parseViolations(entry) {
     const raw = entry.violation_types ?? entry.violations ?? entry.issue
     if (!raw) return []
@@ -250,27 +261,75 @@ export default function DisciplinaryAction() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Print-only header */}
+        <div className="print-only mb-6">
+          <h1 className="text-2xl font-bold">SIPS Healthcare — Disciplinary Action Records</h1>
+          <p className="text-sm">Confidential — Internal Use Only</p>
+        </div>
+
+        {/* Print-only single write-up detail (rendered when user prints a specific row) */}
+        {printEntry && (
+          <div className="print-only print-keep-together">
+            <h2 className="text-xl font-bold mb-2">Disciplinary Write-Up — {printEntry.employee_name}</h2>
+            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+              <div><strong>Employee:</strong> {printEntry.employee_name || '—'}</div>
+              <div><strong>Facility:</strong> {printEntry.facility || printEntry.facility_name || printEntry.worksite || '—'}</div>
+              <div><strong>Position:</strong> {printEntry.position || '—'}</div>
+              <div><strong>Shift:</strong> {printEntry.shift || '—'}</div>
+              <div><strong>Date of Incident:</strong> {printEntry.date_of_incident || '—'}</div>
+              <div><strong>Issuance Date:</strong> {printEntry.issuance_date || '—'}</div>
+              <div><strong>Action Level:</strong> {printEntry.action_level || '—'}</div>
+              <div><strong>Status:</strong> {printEntry.status || 'Pending HR Review'}</div>
+              <div><strong>Monitoring Period:</strong> {printEntry.monitoring_period || '—'}</div>
+              <div><strong>Roll-Off Date:</strong> {printEntry.roll_off_date || '—'}</div>
+              <div><strong>Type:</strong> {printEntry.type || 'New'}</div>
+              <div><strong>Policy Attached:</strong> {printEntry.policy_attached ? 'Yes' : 'No'}</div>
+            </div>
+            <div className="mb-3">
+              <strong>Violation Types:</strong>
+              <div>{parseViolations(printEntry).join(', ') || '—'}</div>
+            </div>
+            <div className="mb-3">
+              <strong>Detailed Description:</strong>
+              <p className="whitespace-pre-wrap">{printEntry.details || '—'}</p>
+            </div>
+            <div className="mb-3">
+              <strong>Plan for Improvement:</strong>
+              <p className="whitespace-pre-wrap">{printEntry.improvement_plan || '—'}</p>
+            </div>
+            <div className="mb-3">
+              <strong>Consequence If Continued:</strong>
+              <p className="whitespace-pre-wrap">{printEntry.consequence_if_continued || '—'}</p>
+            </div>
+            <div className="mt-8 text-sm italic">{ACKNOWLEDGMENT}</div>
+            <div className="grid grid-cols-2 gap-8 mt-12">
+              <div className="signature-block">Employee Signature / Date</div>
+              <div className="signature-block">Supervisor Signature / Date</div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between no-print">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Disciplinary Action</h1>
             <p className="text-sm text-gray-500 mt-1">Issue and track formal disciplinary write-ups</p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors no-print"
           >
             {showForm ? 'Cancel' : '+ New Write-Up'}
           </button>
         </div>
 
         {/* Note */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800 no-print">
           Notification will be sent to HR@sipsconsults.com and the employee on save. Status begins as "Pending HR Review".
         </div>
 
         {/* Inline form */}
         {showForm && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 no-print">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">New Disciplinary Write-Up</h2>
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
@@ -555,7 +614,7 @@ export default function DisciplinaryAction() {
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm no-print">
           {loading ? (
             <div className="p-8 text-center text-gray-500">Loading...</div>
           ) : (Array.isArray(entries) && entries.length === 0) ? (
@@ -618,16 +677,23 @@ export default function DisciplinaryAction() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {status === 'Pending HR Review' ? (
+                          <div className="flex items-center justify-end gap-2">
+                            {status === 'Pending HR Review' && (
+                              <button
+                                onClick={() => handleApprove(entry.id)}
+                                className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+                              >
+                                Approve
+                              </button>
+                            )}
                             <button
-                              onClick={() => handleApprove(entry.id)}
-                              className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+                              onClick={() => handlePrintRow(entry)}
+                              className="text-xs px-3 py-1 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 font-medium"
+                              title="Print this write-up"
                             >
-                              Approve
+                              🖨️ Print
                             </button>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     )
