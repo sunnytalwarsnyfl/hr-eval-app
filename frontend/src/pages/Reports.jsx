@@ -4,10 +4,109 @@ import Layout from '../components/Shared/Layout'
 import { reportsApi } from '../api/reports'
 import { attendanceApi, disciplinaryApi, qaLogApi } from '../api/logs'
 import { employeesApi } from '../api/employees'
+import { generateReportPDF, REPORT_PDF_CONFIGS } from '../utils/generateReportPDF'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend
 } from 'recharts'
+
+const EXPORT_TYPES = [
+  { id: 'evaluations', label: 'Evaluations' },
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'qa', label: 'QA Log' },
+  { id: 'disciplinary', label: 'Disciplinary' },
+  { id: 'pip', label: 'PIP Plans' },
+  { id: 'compliance', label: 'Compliance' },
+  { id: 'belt-levels', label: 'Belt Levels' },
+  { id: 'evals-due', label: 'Evals Due' },
+]
+
+function downloadCSV(type) {
+  // Hit the export endpoint via cookie auth — open in new tab forces download
+  const url = `/api/reports/export/csv/${type}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+async function downloadPDF(type) {
+  // Fetch the same data set used for CSV, render via jsPDF
+  const config = REPORT_PDF_CONFIGS[type]
+  if (!config) {
+    alert(`PDF export not configured for ${type}`)
+    return
+  }
+  try {
+    // Reuse CSV endpoint by fetching JSON variants — but we don't have JSON for these.
+    // Simplest: hit the existing data sources used by the page.
+    const res = await fetch(`/api/reports/export/csv/${type}`, { credentials: 'include' })
+    if (!res.ok) throw new Error('Failed to fetch data')
+    const text = await res.text()
+    // Parse CSV back into rows for PDF rendering
+    const rows = parseCSV(text)
+    generateReportPDF({
+      title: config.title,
+      columns: config.columns,
+      rows,
+    })
+  } catch (e) {
+    alert('PDF export failed: ' + e.message)
+  }
+}
+
+// Minimal CSV parser (handles quoted fields, BOM)
+function parseCSV(csvText) {
+  const text = csvText.replace(/^﻿/, '')
+  const lines = []
+  let cur = ''
+  let inQuotes = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++ }
+      else if (ch === '"') { inQuotes = false }
+      else { cur += ch }
+    } else {
+      if (ch === '"') { inQuotes = true }
+      else if (ch === '\r') { /* skip */ }
+      else if (ch === '\n') { lines.push(cur); cur = '' }
+      else { cur += ch }
+    }
+  }
+  if (cur) lines.push(cur)
+
+  const splitLine = (line) => {
+    const out = []
+    let buf = ''
+    let q = false
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (q) {
+        if (c === '"' && line[i + 1] === '"') { buf += '"'; i++ }
+        else if (c === '"') { q = false }
+        else buf += c
+      } else {
+        if (c === '"') q = true
+        else if (c === ',') { out.push(buf); buf = '' }
+        else buf += c
+      }
+    }
+    out.push(buf)
+    return out
+  }
+
+  if (!lines.length) return []
+  const headers = splitLine(lines[0])
+  return lines.slice(1).filter(l => l.length).map(line => {
+    const cells = splitLine(line)
+    const obj = {}
+    headers.forEach((h, idx) => { obj[h] = cells[idx] })
+    return obj
+  })
+}
 
 const BELT_COLORS = {
   'White':  '#e5e7eb',
@@ -139,6 +238,41 @@ export default function Reports() {
                 Clear
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Export toolbar */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">Export Reports</h2>
+              <p className="text-xs text-gray-500">Download data as CSV or PDF for any report category</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {EXPORT_TYPES.map(t => (
+                <div key={t.id} className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                  <span className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 border-r border-gray-200">
+                    {t.label}
+                  </span>
+                  <button
+                    onClick={() => downloadCSV(t.id)}
+                    className="px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                    title={`Export ${t.label} as CSV`}
+                  >
+                    CSV
+                  </button>
+                  {REPORT_PDF_CONFIGS[t.id] && (
+                    <button
+                      onClick={() => downloadPDF(t.id)}
+                      className="px-3 py-1.5 text-xs font-medium text-red-700 border-l border-gray-200 hover:bg-red-50"
+                      title={`Export ${t.label} as PDF`}
+                    >
+                      PDF
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

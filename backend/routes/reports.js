@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { toCSV, sendCSV } = require('../utils/csv');
 
 router.use(authenticateToken);
 
@@ -248,6 +249,246 @@ router.get('/pip-tracking', (req, res) => {
   `).all();
 
   res.json({ data });
+});
+
+// ─── CSV EXPORT ENDPOINTS ─────────────────────────────────────────────────────
+// GET /api/reports/export/csv/:type
+router.get('/export/csv/:type', (req, res) => {
+  const db = getDb();
+  const { type } = req.params;
+  const today = new Date().toISOString().split('T')[0];
+
+  try {
+    if (type === 'evaluations') {
+      const rows = db.prepare(`
+        SELECT ev.id, ev.evaluation_date, ev.evaluation_type, ev.evaluation_subtype, ev.status,
+               ev.total_score, ev.max_score, ev.passed, ev.overall_score, ev.belt_level_at_eval,
+               e.name AS employee_name, e.department, e.belt_level, e.employment_type,
+               u.name AS evaluator_name
+        FROM evaluations ev
+        JOIN employees e ON ev.employee_id = e.id
+        LEFT JOIN users u ON ev.evaluator_id = u.id
+        ORDER BY ev.evaluation_date DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'evaluation_date', label: 'Date' },
+        { key: 'evaluation_type', label: 'Type' },
+        { key: 'evaluation_subtype', label: 'Subtype' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'evaluator_name', label: 'Evaluator' },
+        { key: 'total_score', label: 'Score' },
+        { key: 'max_score', label: 'Max' },
+        { key: 'passed', label: 'Passed', format: v => (v === 1 ? 'Yes' : v === 0 ? 'No' : '') },
+        { key: 'belt_level', label: 'Belt Level' },
+        { key: 'employment_type', label: 'Employment Type' },
+        { key: 'status', label: 'Status' },
+      ]);
+      return sendCSV(res, `evaluations_${today}.csv`, csv);
+    }
+
+    if (type === 'attendance') {
+      const rows = db.prepare(`
+        SELECT a.id, a.date_of_occurrence, a.occurrence_code, a.occurrence_type,
+               a.description_type, a.description, a.points, a.accumulated_points,
+               a.roll_off_date, a.acknowledged_by_employee, a.acknowledged_at,
+               e.name AS employee_name, e.department, e.job_title,
+               f.name AS facility_name
+        FROM attendance_log a
+        JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN facilities f ON a.facility_id = f.id
+        ORDER BY a.date_of_occurrence DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'facility_name', label: 'Facility' },
+        { key: 'date_of_occurrence', label: 'Date' },
+        { key: 'occurrence_code', label: 'Code' },
+        { key: 'occurrence_type', label: 'Type' },
+        { key: 'description_type', label: 'Description Type' },
+        { key: 'description', label: 'Description' },
+        { key: 'points', label: 'Points' },
+        { key: 'accumulated_points', label: 'Accumulated' },
+        { key: 'roll_off_date', label: 'Roll-Off Date' },
+        { key: 'acknowledged_by_employee', label: 'Acknowledged', format: v => (v ? 'Yes' : 'No') },
+      ]);
+      return sendCSV(res, `attendance_${today}.csv`, csv);
+    }
+
+    if (type === 'qa') {
+      const rows = db.prepare(`
+        SELECT q.id, q.date_of_incident, q.issue_type, q.issue, q.issue_points,
+               q.accumulated_points, q.action_taken, q.status, q.disciplinary_triggered,
+               q.description, q.roll_off_date,
+               e.name AS employee_name, e.department, e.job_title,
+               f.name AS facility_name
+        FROM qa_log q
+        JOIN employees e ON q.employee_id = e.id
+        LEFT JOIN facilities f ON q.facility_id = f.id
+        ORDER BY q.date_of_incident DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'facility_name', label: 'Facility' },
+        { key: 'date_of_incident', label: 'Date' },
+        { key: 'issue_type', label: 'Issue Type' },
+        { key: 'issue_points', label: 'Points' },
+        { key: 'accumulated_points', label: 'Accumulated' },
+        { key: 'action_taken', label: 'Action Required' },
+        { key: 'disciplinary_triggered', label: 'Disciplinary Triggered', format: v => (v ? 'Yes' : 'No') },
+        { key: 'status', label: 'Status' },
+        { key: 'description', label: 'Description' },
+        { key: 'roll_off_date', label: 'Roll-Off Date' },
+      ]);
+      return sendCSV(res, `qa_log_${today}.csv`, csv);
+    }
+
+    if (type === 'disciplinary') {
+      const rows = db.prepare(`
+        SELECT d.id, d.date_of_incident, d.issuance_date, d.violation_types, d.action_level,
+               d.monitoring_period, d.type, d.status, d.roll_off_date, d.consequence_type,
+               d.suspension_days, d.policy_attached,
+               e.name AS employee_name, e.department, e.job_title,
+               f.name AS facility_name,
+               u.name AS initiated_by_name,
+               h.name AS hr_approved_by_name,
+               d.hr_approved_at, d.employee_signed_at, d.manager_signed_at
+        FROM disciplinary_actions d
+        JOIN employees e ON d.employee_id = e.id
+        LEFT JOIN facilities f ON d.facility_id = f.id
+        LEFT JOIN users u ON d.initiated_by = u.id
+        LEFT JOIN users h ON d.hr_approved_by = h.id
+        ORDER BY d.date_of_incident DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'facility_name', label: 'Facility' },
+        { key: 'date_of_incident', label: 'Incident Date' },
+        { key: 'issuance_date', label: 'Issuance Date' },
+        { key: 'violation_types', label: 'Violations' },
+        { key: 'action_level', label: 'Action Level' },
+        { key: 'consequence_type', label: 'Consequence' },
+        { key: 'monitoring_period', label: 'Monitoring' },
+        { key: 'type', label: 'Type' },
+        { key: 'status', label: 'Status' },
+        { key: 'initiated_by_name', label: 'Initiated By' },
+        { key: 'hr_approved_by_name', label: 'HR Approved By' },
+        { key: 'hr_approved_at', label: 'HR Approved At' },
+        { key: 'employee_signed_at', label: 'Employee Signed' },
+        { key: 'manager_signed_at', label: 'Manager Signed' },
+        { key: 'roll_off_date', label: 'Roll-Off Date' },
+      ]);
+      return sendCSV(res, `disciplinary_${today}.csv`, csv);
+    }
+
+    if (type === 'pip') {
+      const rows = db.prepare(`
+        SELECT pp.id, pp.created_at, pp.action_plan, pp.goals, pp.expectations,
+               pp.timeline, pp.next_pip_date, pp.status, pp.monitoring_period, pp.type,
+               ev.evaluation_date, ev.total_score, ev.max_score,
+               e.name AS employee_name, e.department,
+               u.name AS evaluator_name
+        FROM pip_plans pp
+        JOIN evaluations ev ON pp.evaluation_id = ev.id
+        JOIN employees e ON ev.employee_id = e.id
+        LEFT JOIN users u ON ev.evaluator_id = u.id
+        ORDER BY pp.created_at DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'PIP ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'evaluator_name', label: 'Evaluator' },
+        { key: 'created_at', label: 'Created' },
+        { key: 'evaluation_date', label: 'Eval Date' },
+        { key: 'monitoring_period', label: 'Monitoring' },
+        { key: 'type', label: 'Type' },
+        { key: 'status', label: 'Status' },
+        { key: 'next_pip_date', label: 'Next Review' },
+        { key: 'action_plan', label: 'Action Plan' },
+        { key: 'goals', label: 'Goals' },
+      ]);
+      return sendCSV(res, `pip_${today}.csv`, csv);
+    }
+
+    if (type === 'compliance') {
+      const rows = db.prepare(`
+        SELECT c.id, c.requirement_type, c.expiration_date, c.renewed_date,
+               c.renewed_within_deadline, c.points_value, c.notes, c.created_at,
+               e.name AS employee_name, e.department
+        FROM compliance_records c
+        JOIN employees e ON c.employee_id = e.id
+        ORDER BY c.created_at DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'requirement_type', label: 'Requirement' },
+        { key: 'expiration_date', label: 'Expiration' },
+        { key: 'renewed_date', label: 'Renewed' },
+        { key: 'renewed_within_deadline', label: 'On Time', format: v => (v === 1 ? 'Yes' : v === 0 ? 'No' : 'Pending') },
+        { key: 'points_value', label: 'Points' },
+        { key: 'notes', label: 'Notes' },
+      ]);
+      return sendCSV(res, `compliance_${today}.csv`, csv);
+    }
+
+    if (type === 'belt-levels') {
+      const rows = db.prepare(`
+        SELECT belt_level, COUNT(*) AS count
+        FROM employees WHERE active = 1
+        GROUP BY belt_level
+        ORDER BY count DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'belt_level', label: 'Belt Level', format: v => v || '(none)' },
+        { key: 'count', label: 'Count' },
+      ]);
+      return sendCSV(res, `belt_levels_${today}.csv`, csv);
+    }
+
+    if (type === 'evals-due') {
+      const rows = db.prepare(`
+        SELECT e.id, e.name AS employee_name, e.department, e.job_title, e.belt_level,
+               e.hire_date, e.anniversary_date,
+               MAX(ev.evaluation_date) AS last_eval_date,
+               u.name AS manager_name,
+               julianday('now') - julianday(COALESCE(MAX(ev.evaluation_date), e.hire_date)) AS days_since_eval
+        FROM employees e
+        LEFT JOIN evaluations ev ON e.id = ev.employee_id AND ev.status != 'Draft'
+        LEFT JOIN users u ON e.manager_id = u.id
+        WHERE e.active = 1
+        GROUP BY e.id
+        HAVING last_eval_date IS NULL OR last_eval_date < date('now', '-12 months')
+        ORDER BY days_since_eval DESC
+      `).all();
+      const csv = toCSV(rows, [
+        { key: 'id', label: 'ID' },
+        { key: 'employee_name', label: 'Employee' },
+        { key: 'department', label: 'Department' },
+        { key: 'job_title', label: 'Job Title' },
+        { key: 'belt_level', label: 'Belt' },
+        { key: 'manager_name', label: 'Manager' },
+        { key: 'hire_date', label: 'Hire Date' },
+        { key: 'anniversary_date', label: 'Anniversary' },
+        { key: 'last_eval_date', label: 'Last Eval' },
+        { key: 'days_since_eval', label: 'Days Since', format: v => v ? Math.round(v) : '' },
+      ]);
+      return sendCSV(res, `evals_due_${today}.csv`, csv);
+    }
+
+    return res.status(400).json({ error: `Unknown export type: ${type}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
