@@ -47,8 +47,15 @@ router.get('/', (req, res) => {
 
   const params = [];
 
-  // Manager role: only see evaluations for their assigned employees
-  if (req.user.role === 'manager') {
+  // Employee role: hard-scope results to their own employee_id (security)
+  if (req.user.role === 'employee') {
+    if (!req.user.employee_id) {
+      return res.json({ evaluations: [] });
+    }
+    query += ` AND ev.employee_id = ?`;
+    params.push(req.user.employee_id);
+  } else if (req.user.role === 'manager') {
+    // Manager role: only see evaluations for their assigned employees
     query += ` AND e.manager_id = ?`;
     params.push(req.user.id);
   }
@@ -73,7 +80,7 @@ router.get('/', (req, res) => {
     query += ` AND ev.passed = ?`;
     params.push(passed === 'true' || passed === '1' ? 1 : 0);
   }
-  if (employee_id) {
+  if (employee_id && req.user.role !== 'employee') {
     query += ` AND ev.employee_id = ?`;
     params.push(employee_id);
   }

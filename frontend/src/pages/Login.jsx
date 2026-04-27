@@ -17,8 +17,13 @@ export default function Login() {
     setLoading(true)
     try {
       const res = await client.post('/auth/login', { email, password })
-      setUser(res.data.user)
-      navigate('/dashboard')
+      const loggedInUser = res.data.user
+      setUser(loggedInUser)
+      if (loggedInUser?.role === 'employee') {
+        navigate('/my-evaluations')
+      } else {
+        navigate('/dashboard')
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed. Please try again.')
     } finally {

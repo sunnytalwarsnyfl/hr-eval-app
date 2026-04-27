@@ -4,9 +4,31 @@ import Layout from '../components/Shared/Layout'
 import { pipApi } from '../api/pip'
 
 const statusBadge = {
-  Active: 'bg-red-100 text-red-700',
-  Completed: 'bg-green-100 text-green-700',
-  Extended: 'bg-yellow-100 text-yellow-700'
+  'Active': 'bg-blue-100 text-blue-700',
+  'Complete - Met Expectations': 'bg-green-100 text-green-700',
+  'Incomplete - Did Not Meet': 'bg-red-100 text-red-700',
+  'Extended': 'bg-yellow-100 text-yellow-700',
+  // Legacy
+  'Completed': 'bg-green-100 text-green-700'
+}
+
+const STATUS_OPTIONS = ['Active', 'Complete - Met Expectations', 'Incomplete - Did Not Meet', 'Extended']
+const MONITORING_OPTIONS = ['15 Days', '30 Days', '45 Days', '60 Days']
+const TYPE_OPTIONS = ['New', 'Extension']
+
+function parseMonitoringDays(value) {
+  if (!value) return 30
+  const m = String(value).match(/(\d+)/)
+  return m ? parseInt(m[1], 10) : 30
+}
+
+function calcRollOffDate(createdAt, monitoringPeriod) {
+  if (!createdAt) return '—'
+  const base = String(createdAt).substring(0, 10)
+  const d = new Date(base)
+  if (isNaN(d.getTime())) return '—'
+  d.setDate(d.getDate() + parseMonitoringDays(monitoringPeriod))
+  return d.toISOString().split('T')[0]
 }
 
 export default function PIPDetail() {
@@ -57,7 +79,9 @@ export default function PIPDetail() {
         expectations: editForm.expectations,
         timeline: editForm.timeline,
         next_pip_date: editForm.next_pip_date,
-        status: editForm.status
+        status: editForm.status,
+        monitoring_period: editForm.monitoring_period,
+        type: editForm.type
       })
       setPip(prev => ({ ...prev, ...res.data.pip }))
       setIsEditing(false)
@@ -91,6 +115,7 @@ export default function PIPDetail() {
   }
 
   const scorePct = pip.max_score > 0 ? Math.round(pip.total_score / pip.max_score * 100) : 0
+  const rollOffDate = calcRollOffDate(pip.created_at, pip.monitoring_period)
 
   return (
     <Layout>
@@ -193,6 +218,31 @@ export default function PIPDetail() {
           </div>
         </div>
 
+        {/* PIP Schedule Summary */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="font-semibold text-gray-800 mb-3">PIP Schedule</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-gray-500">Type</p>
+              <p className="font-medium">{pip.type || 'New'}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Monitoring Period</p>
+              <p className="font-medium">{pip.monitoring_period || '30 Days'}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Issuance Date</p>
+              <p className="font-medium">
+                {pip.created_at ? String(pip.created_at).substring(0, 10) : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500">Roll-Off Date</p>
+              <p className="font-medium">{rollOffDate}</p>
+            </div>
+          </div>
+        </div>
+
         {/* PIP Fields */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -276,17 +326,43 @@ export default function PIPDetail() {
             </div>
 
             {isEditing && (
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-1">Status</p>
-                <select
-                  value={editForm.status || 'Active'}
-                  onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value }))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Extended">Extended</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Type</p>
+                  <select
+                    value={editForm.type || 'New'}
+                    onChange={e => setEditForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {TYPE_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Monitoring Period</p>
+                  <select
+                    value={editForm.monitoring_period || '30 Days'}
+                    onChange={e => setEditForm(prev => ({ ...prev, monitoring_period: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {MONITORING_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-1">Status</p>
+                  <select
+                    value={editForm.status || 'Active'}
+                    onChange={e => setEditForm(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {STATUS_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -296,13 +372,21 @@ export default function PIPDetail() {
         {!isEditing && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="font-semibold text-gray-800 mb-3">Update Status</h2>
-            <div className="flex items-center gap-3">
-              {pip.status !== 'Completed' && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {pip.status !== 'Complete - Met Expectations' && (
                 <button
-                  onClick={() => handleStatusUpdate('Completed')}
+                  onClick={() => handleStatusUpdate('Complete - Met Expectations')}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
                 >
-                  Mark Completed
+                  Mark Complete - Met Expectations
+                </button>
+              )}
+              {pip.status !== 'Incomplete - Did Not Meet' && (
+                <button
+                  onClick={() => handleStatusUpdate('Incomplete - Did Not Meet')}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                >
+                  Mark Incomplete - Did Not Meet
                 </button>
               )}
               {pip.status !== 'Extended' && (
@@ -316,7 +400,7 @@ export default function PIPDetail() {
               {pip.status !== 'Active' && (
                 <button
                   onClick={() => handleStatusUpdate('Active')}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                 >
                   Reactivate
                 </button>

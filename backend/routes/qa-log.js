@@ -54,6 +54,12 @@ router.get('/', (req, res) => {
   `;
   const params = [];
 
+  // Manager scope: only their employees' QA records
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  }
+
   if (employee_id) {
     query += ` AND q.employee_id = ?`;
     params.push(employee_id);

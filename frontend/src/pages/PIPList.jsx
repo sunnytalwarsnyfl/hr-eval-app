@@ -3,12 +3,30 @@ import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { pipApi } from '../api/pip'
 
-const STATUS_TABS = ['All', 'Active', 'Completed', 'Extended']
+const STATUS_TABS = ['All', 'Active', 'Complete - Met Expectations', 'Incomplete - Did Not Meet', 'Extended']
 
 const statusBadge = {
-  Active: 'bg-red-100 text-red-700',
-  Completed: 'bg-green-100 text-green-700',
-  Extended: 'bg-yellow-100 text-yellow-700'
+  'Active': 'bg-blue-100 text-blue-700',
+  'Complete - Met Expectations': 'bg-green-100 text-green-700',
+  'Incomplete - Did Not Meet': 'bg-red-100 text-red-700',
+  'Extended': 'bg-yellow-100 text-yellow-700',
+  // Legacy
+  'Completed': 'bg-green-100 text-green-700'
+}
+
+function parseMonitoringDays(value) {
+  if (!value) return 30
+  const m = String(value).match(/(\d+)/)
+  return m ? parseInt(m[1], 10) : 30
+}
+
+function calcRollOffDate(createdAt, monitoringPeriod) {
+  if (!createdAt) return '—'
+  const base = String(createdAt).substring(0, 10)
+  const d = new Date(base)
+  if (isNaN(d.getTime())) return '—'
+  d.setDate(d.getDate() + parseMonitoringDays(monitoringPeriod))
+  return d.toISOString().split('T')[0]
 }
 
 export default function PIPList() {
@@ -89,7 +107,7 @@ export default function PIPList() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 w-fit">
+        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 w-fit flex-wrap">
           {STATUS_TABS.map(tab => (
             <button
               key={tab}
@@ -120,8 +138,11 @@ export default function PIPList() {
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Employee</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Department</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Monitoring</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Eval Date</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Start Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Roll-Off Date</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Next Review</th>
                     <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
@@ -136,9 +157,14 @@ export default function PIPList() {
                     >
                       <td className="px-4 py-3 font-medium text-gray-900">{pip.employee_name}</td>
                       <td className="px-4 py-3 text-gray-600">{pip.department}</td>
+                      <td className="px-4 py-3 text-gray-600">{pip.type || 'New'}</td>
+                      <td className="px-4 py-3 text-gray-600">{pip.monitoring_period || '30 Days'}</td>
                       <td className="px-4 py-3 text-gray-600">{pip.evaluation_date || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">
                         {pip.created_at ? pip.created_at.split('T')[0] || pip.created_at.substring(0, 10) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {calcRollOffDate(pip.created_at, pip.monitoring_period)}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{pip.next_pip_date || '—'}</td>
                       <td className="px-4 py-3 text-center">
@@ -146,7 +172,7 @@ export default function PIPList() {
                           {pip.status || 'Active'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-4 py-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => navigate(`/pip/${pip.id}`)}
                           className="text-blue-600 hover:text-blue-800 font-medium text-xs mr-2"
@@ -159,9 +185,9 @@ export default function PIPList() {
                         >
                           Edit
                         </button>
-                        {pip.status !== 'Completed' && (
+                        {pip.status !== 'Complete - Met Expectations' && (
                           <button
-                            onClick={(e) => handleUpdateStatus(pip, 'Completed', e)}
+                            onClick={(e) => handleUpdateStatus(pip, 'Complete - Met Expectations', e)}
                             className="text-green-600 hover:text-green-800 font-medium text-xs mr-2"
                           >
                             Complete

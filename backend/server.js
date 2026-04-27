@@ -214,6 +214,49 @@ try {
     console.log('Migration: added pip_plans columns');
   }
 
+  // Migrate pip_plans status to allow new values
+  const pipPlansInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='pip_plans'").get();
+  if (pipPlansInfo && pipPlansInfo.sql && pipPlansInfo.sql.includes("CHECK(status IN")) {
+    try {
+      db.pragma('foreign_keys = OFF');
+      db.exec('BEGIN TRANSACTION');
+      db.exec(`CREATE TABLE pip_plans_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        evaluation_id INTEGER NOT NULL REFERENCES evaluations(id) ON DELETE CASCADE,
+        action_plan TEXT,
+        goals TEXT,
+        expectations TEXT,
+        timeline TEXT,
+        next_pip_date DATE,
+        status TEXT DEFAULT 'Active',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        facility_id INTEGER REFERENCES facilities(id),
+        monitoring_period TEXT DEFAULT '30 Days',
+        type TEXT DEFAULT 'New',
+        hr_reviewed_at DATETIME,
+        notification_sent INTEGER DEFAULT 0
+      )`);
+      // Copy only columns that exist in old table
+      const oldCols = db.prepare("PRAGMA table_info(pip_plans)").all().map(c => c.name);
+      const commonCols = ['id','evaluation_id','action_plan','goals','expectations','timeline','next_pip_date','status','created_at']
+        .concat(oldCols.includes('facility_id') ? ['facility_id'] : [])
+        .concat(oldCols.includes('monitoring_period') ? ['monitoring_period'] : [])
+        .concat(oldCols.includes('type') ? ['type'] : [])
+        .concat(oldCols.includes('hr_reviewed_at') ? ['hr_reviewed_at'] : [])
+        .concat(oldCols.includes('notification_sent') ? ['notification_sent'] : []);
+      db.exec(`INSERT INTO pip_plans_new (${commonCols.join(',')}) SELECT ${commonCols.join(',')} FROM pip_plans`);
+      db.exec('DROP TABLE pip_plans');
+      db.exec('ALTER TABLE pip_plans_new RENAME TO pip_plans');
+      db.exec('COMMIT');
+      db.pragma('foreign_keys = ON');
+      console.log('Migration: removed pip_plans status CHECK to allow new values');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch (_) {}
+      db.pragma('foreign_keys = ON');
+      console.error('PIP migration error:', e.message);
+    }
+  }
+
   // evaluations new columns
   const evalCols = db.prepare("PRAGMA table_info(evaluations)").all();
   if (!evalCols.find(c => c.name === 'evaluation_subtype')) {

@@ -19,7 +19,7 @@ router.use(authenticateToken);
 router.get('/summary', (req, res) => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    let query = `
       SELECT e.id AS employee_id, e.name, e.department, e.job_title,
              f.name AS facility_name,
              COALESCE(SUM(a.accumulated_points), 0) AS total_active_points,
@@ -28,10 +28,18 @@ router.get('/summary', (req, res) => {
       LEFT JOIN facilities f ON e.facility_id = f.id
       LEFT JOIN attendance_log a ON a.employee_id = e.id AND a.roll_off_date > date('now')
       WHERE e.active = 1
+    `;
+    const params = [];
+    if (req.user.role === 'manager') {
+      query += ` AND e.manager_id = ?`;
+      params.push(req.user.id);
+    }
+    query += `
       GROUP BY e.id
       HAVING total_active_points > 0
       ORDER BY total_active_points DESC
-    `).all();
+    `;
+    const rows = db.prepare(query).all(...params);
     res.json({ data: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -53,6 +61,12 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
+
+  // Manager scope: only their employees' attendance
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  }
 
   if (employee_id) {
     query += ` AND a.employee_id = ?`;

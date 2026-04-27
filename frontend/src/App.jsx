@@ -22,6 +22,8 @@ import AttendanceLog from './pages/AttendanceLog'
 import DisciplinaryAction from './pages/DisciplinaryAction'
 import QALog from './pages/QALog'
 import SelfEvalPortal from './pages/SelfEvalPortal'
+import EmployeeMyEvals from './pages/EmployeeMyEvals'
+import DisciplinarySignPortal from './pages/DisciplinarySignPortal'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -46,9 +48,19 @@ export default function App() {
     <AuthContext.Provider value={{ user, setUser, loading }}>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+          <Route path="/login" element={
+            user
+              ? <Navigate to={user.role === 'employee' ? '/my-evaluations' : '/dashboard'} replace />
+              : <Login />
+          } />
           <Route path="/self-eval/invite/:token" element={<SelfEvalPortal />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/disciplinary/sign/:id/:token" element={<DisciplinarySignPortal />} />
+          <Route path="/my-evaluations" element={
+            <ProtectedRoute><EmployeeMyEvals /></ProtectedRoute>
+          } />
+          <Route path="/" element={
+            <Navigate to={user?.role === 'employee' ? '/my-evaluations' : '/dashboard'} replace />
+          } />
 
           <Route path="/dashboard" element={
             <ProtectedRoute><Dashboard /></ProtectedRoute>

@@ -5,6 +5,24 @@ import { pipApi } from '../api/pip'
 import { employeesApi } from '../api/employees'
 import client from '../api/client'
 
+const MONITORING_OPTIONS = ['15 Days', '30 Days', '45 Days', '60 Days']
+const TYPE_OPTIONS = ['New', 'Extension']
+const STATUS_OPTIONS = ['Active', 'Complete - Met Expectations', 'Incomplete - Did Not Meet', 'Extended']
+
+function parseMonitoringDays(value) {
+  if (!value) return 30
+  const m = String(value).match(/(\d+)/)
+  return m ? parseInt(m[1], 10) : 30
+}
+
+function addDaysISO(dateStr, days) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
 export default function PIPForm() {
   const navigate = useNavigate()
   const { id } = useParams() // present when editing
@@ -17,6 +35,8 @@ export default function PIPForm() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  const today = new Date().toISOString().split('T')[0]
+
   const [form, setForm] = useState({
     employee_id: '',
     evaluation_id: '',
@@ -25,7 +45,10 @@ export default function PIPForm() {
     expectations: '',
     timeline: '',
     next_pip_date: '',
-    status: 'Active'
+    status: 'Active',
+    monitoring_period: '30 Days',
+    type: 'New',
+    issuance_date: today
   })
 
   // Load employees list
@@ -50,7 +73,10 @@ export default function PIPForm() {
           expectations: pip.expectations || '',
           timeline: pip.timeline || '',
           next_pip_date: pip.next_pip_date || '',
-          status: pip.status || 'Active'
+          status: pip.status || 'Active',
+          monitoring_period: pip.monitoring_period || '30 Days',
+          type: pip.type || 'New',
+          issuance_date: (pip.created_at ? String(pip.created_at).substring(0, 10) : today)
         })
         // Load evals for this employee
         if (pip.employee_id) {
@@ -88,6 +114,9 @@ export default function PIPForm() {
     }
   }
 
+  // Auto-calculated roll-off date display
+  const rollOffDate = addDaysISO(form.issuance_date || today, parseMonitoringDays(form.monitoring_period))
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -100,7 +129,9 @@ export default function PIPForm() {
         expectations: form.expectations || null,
         timeline: form.timeline || null,
         next_pip_date: form.next_pip_date || null,
-        status: form.status
+        status: form.status,
+        monitoring_period: form.monitoring_period || '30 Days',
+        type: form.type || 'New'
       }
       if (isEdit) {
         await pipApi.update(id, payload)
@@ -230,6 +261,64 @@ export default function PIPForm() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Monitoring Period */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monitoring Period</label>
+                <select
+                  name="monitoring_period"
+                  value={form.monitoring_period}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {MONITORING_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  name="type"
+                  value={form.type}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {TYPE_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Issuance Date (used for roll-off calculation) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Issuance Date</label>
+                <input
+                  type="date"
+                  name="issuance_date"
+                  value={form.issuance_date}
+                  onChange={handleChange}
+                  disabled={isEdit}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                />
+              </div>
+
+              {/* Roll-Off Date (auto-calculated) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Roll-Off Date</label>
+                <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700">
+                  {rollOffDate || '—'}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Auto-calculated: {parseMonitoringDays(form.monitoring_period)} days from issuance date
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Timeline */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Timeline</label>
@@ -265,10 +354,15 @@ export default function PIPForm() {
                 onChange={handleChange}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="Active">Active</option>
-                <option value="Completed">Completed</option>
-                <option value="Extended">Extended</option>
+                {STATUS_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
+            </div>
+
+            {/* Notification note */}
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-sm">
+              On save, HR and Manager will be notified. Next review reminder will be scheduled for the next_pip_date.
             </div>
 
             {/* Actions */}

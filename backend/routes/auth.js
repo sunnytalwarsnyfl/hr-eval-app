@@ -26,7 +26,14 @@ router.post('/login', (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role, department: user.department },
+    {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      department: user.department,
+      employee_id: user.employee_id || null
+    },
     JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -44,7 +51,8 @@ router.post('/login', (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
-      department: user.department
+      department: user.department,
+      employee_id: user.employee_id || null
     }
   });
 });
@@ -58,7 +66,14 @@ router.post('/logout', (req, res) => {
 // GET /api/auth/me
 router.get('/me', authenticateToken, (req, res) => {
   const db = getDb();
-  const user = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare(`
+    SELECT u.id, u.name, u.email, u.role, u.department, u.employee_id,
+           e.name AS employee_name, e.department AS employee_department,
+           e.job_title, e.tech_level, e.hire_date
+    FROM users u
+    LEFT JOIN employees e ON u.employee_id = e.id
+    WHERE u.id = ?
+  `).get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user });
 });

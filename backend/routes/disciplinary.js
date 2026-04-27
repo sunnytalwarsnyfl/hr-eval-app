@@ -74,7 +74,7 @@ router.use(authenticateToken);
 router.get('/summary', (req, res) => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    let summaryQuery = `
       SELECT d.*,
              e.name AS employee_name, e.department, e.job_title, e.email AS employee_email,
              f.name AS facility_name
@@ -84,12 +84,26 @@ router.get('/summary', (req, res) => {
       WHERE d.status IN ('Incomplete','Active','Pending HR Review','Approved')
         AND d.roll_off_date <= date('now', '+30 days')
         AND d.roll_off_date >= date('now')
-      ORDER BY d.roll_off_date ASC
-    `).all();
-    const open = db.prepare(`
-      SELECT COUNT(*) AS c FROM disciplinary_actions
-      WHERE status IN ('Incomplete','Active','Pending HR Review','Approved')
-    `).get();
+    `;
+    const summaryParams = [];
+    if (req.user.role === 'manager') {
+      summaryQuery += ` AND e.manager_id = ?`;
+      summaryParams.push(req.user.id);
+    }
+    summaryQuery += ` ORDER BY d.roll_off_date ASC`;
+    const rows = db.prepare(summaryQuery).all(...summaryParams);
+
+    let openQuery = `
+      SELECT COUNT(*) AS c FROM disciplinary_actions d
+      JOIN employees e ON d.employee_id = e.id
+      WHERE d.status IN ('Incomplete','Active','Pending HR Review','Approved')
+    `;
+    const openParams = [];
+    if (req.user.role === 'manager') {
+      openQuery += ` AND e.manager_id = ?`;
+      openParams.push(req.user.id);
+    }
+    const open = db.prepare(openQuery).get(...openParams);
     res.json({ data: rows, open_cases: open.c, count: open.c });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -111,6 +125,12 @@ router.get('/', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
+
+  // Manager scope: only their employees' disciplinary records
+  if (req.user.role === 'manager') {
+    query += ` AND e.manager_id = ?`;
+    params.push(req.user.id);
+  }
 
   if (employee_id) {
     query += ` AND d.employee_id = ?`;
