@@ -3,10 +3,185 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import StatusBadge from '../components/Shared/StatusBadge'
 import { employeesApi } from '../api/employees'
+import { complianceApi } from '../api/compliance'
 import { useAuth } from '../App'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts'
+
+const COMPLIANCE_TYPES = ['Hepatitis B', 'Physical Exam', 'BLS', 'Certification', 'Other']
+
+function ComplianceModal({ onClose, onSaved, employeeId }) {
+  const [form, setForm] = useState({
+    requirement_type: 'Hepatitis B',
+    expiration_date: '',
+    renewed_date: '',
+    notes: ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    if (!form.requirement_type) { setError('Requirement type is required'); return }
+    setSaving(true); setError('')
+    try {
+      await complianceApi.create({
+        employee_id: employeeId,
+        ...form,
+        expiration_date: form.expiration_date || null,
+        renewed_date: form.renewed_date || null,
+        notes: form.notes || null
+      })
+      onSaved()
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h3 className="text-base font-semibold text-gray-900">Add Compliance Record</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <div className="p-6 space-y-4">
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Requirement Type <span className="text-red-500">*</span></label>
+            <select
+              value={form.requirement_type}
+              onChange={e => setForm(p => ({ ...p, requirement_type: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              {COMPLIANCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expiration Date</label>
+              <input type="date" value={form.expiration_date}
+                onChange={e => setForm(p => ({ ...p, expiration_date: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Renewed Date</label>
+              <input type="date" value={form.renewed_date}
+                onChange={e => setForm(p => ({ ...p, renewed_date: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <textarea value={form.notes} rows={3}
+              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Optional notes" />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={handleSave} disabled={saving}
+              className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+            <button onClick={onClose}
+              className="border border-gray-300 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ComplianceSection({ employeeId }) {
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+
+  useEffect(() => { load() }, [employeeId])
+
+  async function load() {
+    try {
+      const res = await complianceApi.list({ employee_id: employeeId })
+      setRecords(res.data.data || [])
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
+  }
+
+  async function handleSaved() {
+    setShowModal(false)
+    setLoading(true)
+    await load()
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this compliance record?')) return
+    try { await complianceApi.remove(id); load() }
+    catch (e) { alert(e.response?.data?.error || 'Failed to delete') }
+  }
+
+  function statusBadge(record) {
+    if (record.renewed_within_deadline === 1) {
+      return <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">On Time</span>
+    }
+    if (record.renewed_within_deadline === 0) {
+      return <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">Late</span>
+    }
+    if (record.expiration_date) {
+      const exp = new Date(record.expiration_date)
+      if (exp < new Date()) {
+        return <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">Expired</span>
+      }
+    }
+    return <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">Pending</span>
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h2 className="font-semibold text-gray-800">Compliance</h2>
+        <button onClick={() => setShowModal(true)}
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+          + Add Compliance Record
+        </button>
+      </div>
+      {loading ? (
+        <div className="p-6 text-center text-gray-400 text-sm">Loading...</div>
+      ) : records.length === 0 ? (
+        <div className="p-6 text-center text-gray-500 text-sm">No compliance records on file.</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Requirement</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Expiration</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Renewed</th>
+              <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Notes</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {records.map(r => (
+              <tr key={r.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{r.requirement_type}</td>
+                <td className="px-4 py-3 text-gray-600">{r.expiration_date || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{r.renewed_date || '—'}</td>
+                <td className="px-4 py-3 text-center">{statusBadge(r)}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate" title={r.notes || ''}>{r.notes || '—'}</td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => handleDelete(r.id)} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {showModal && <ComplianceModal employeeId={employeeId} onClose={() => setShowModal(false)} onSaved={handleSaved} />}
+    </div>
+  )
+}
 
 const BELT_LEVEL_COLORS = {
   'White': 'bg-gray-100 text-gray-700 border border-gray-300',
@@ -215,6 +390,9 @@ export default function EmployeeProfile() {
             </table>
           )}
         </div>
+
+        {/* Compliance Records */}
+        <ComplianceSection employeeId={employee.id} />
 
         {/* PIP Plans */}
         {pipPlans.length > 0 && (

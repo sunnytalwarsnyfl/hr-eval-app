@@ -1,10 +1,70 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { settingsApi } from '../api/settings'
 import { useAuth } from '../App'
 
-const TABS = ['Departments', 'Facilities', 'Users']
+const TABS = ['Departments', 'Facilities', 'Users', 'Templates']
 const ROLES = ['admin', 'hr', 'manager', 'employee']
+
+const EVAL_TEMPLATES = [
+  {
+    id: 'technician',
+    name: 'Technician',
+    description: 'Standard SPD Technician evaluation — 8 sections, 227 max score',
+    sections: ['Dependability', 'Attendance', 'Policies & Procedures', 'Communication Skills', 'Productivity', 'Safety / Injuries', 'Production Quality', 'Knowledge'],
+    scoring: '0–3 per item',
+    passingScore: '211/227 (93%)',
+  },
+  {
+    id: 'specialty_technician',
+    name: 'Specialty Technician',
+    description: 'Specialty-focused tech evaluation with advanced competency review',
+    sections: ['Dependability', 'Attendance', 'Specialty Procedures', 'Equipment Mastery', 'Communication', 'Quality', 'Knowledge'],
+    scoring: '0–3 per item',
+    passingScore: '85%+',
+  },
+  {
+    id: 'or_support',
+    name: 'OR Support',
+    description: 'OR Liaison and support staff evaluation',
+    sections: ['Communication with OR', 'Case Cart Accuracy', 'Preference Card Mgmt', 'Issue Resolution', 'Professionalism', 'Knowledge'],
+    scoring: '0–3 per item',
+    passingScore: '85%+',
+  },
+  {
+    id: 'leadership',
+    name: 'Leadership',
+    description: 'Manager/Supervisor evaluation focusing on team management and operational excellence',
+    sections: ['Team Management', 'Operational Excellence', 'Communication', 'Strategic Thinking', 'Mentorship', 'Compliance'],
+    scoring: '0–3 per item',
+    passingScore: '85%+',
+  },
+  {
+    id: 'coordinator',
+    name: 'Coordinator',
+    description: 'Workflow coordinator evaluation',
+    sections: ['Coordination Skills', 'Process Mgmt', 'Communication', 'Problem Solving', 'Quality', 'Knowledge'],
+    scoring: '0–3 per item',
+    passingScore: '85%+',
+  },
+  {
+    id: 'administrative',
+    name: 'Administrative',
+    description: 'Administrative staff evaluation',
+    sections: ['Documentation', 'Process Adherence', 'Communication', 'Reliability', 'Customer Service', 'Knowledge'],
+    scoring: '0–3 per item',
+    passingScore: '80%+',
+  },
+  {
+    id: 'executive',
+    name: 'Executive',
+    description: 'Executive-level evaluation with strategic and leadership focus',
+    sections: ['Strategic Vision', 'Leadership', 'Financial Stewardship', 'Stakeholder Mgmt', 'Innovation', 'Compliance & Ethics'],
+    scoring: '0–3 per item',
+    passingScore: '90%+',
+  },
+]
 
 function Modal({ title, onClose, children }) {
   return (
@@ -455,6 +515,103 @@ function UsersTab() {
   )
 }
 
+// ─── TEMPLATES TAB ────────────────────────────────────────────────────────────
+function TemplatesTab() {
+  const navigate = useNavigate()
+  const [previewing, setPreviewing] = useState(null)
+
+  function handleAssign(tpl) {
+    navigate(`/evaluations/new?template=${tpl.id}`)
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">Predefined evaluation templates available for assignment</p>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Description</th>
+              <th className="text-center px-4 py-3 font-medium text-gray-600">Sections</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Passing Score</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {EVAL_TEMPLATES.map(tpl => (
+              <tr key={tpl.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{tpl.name}</td>
+                <td className="px-4 py-3 text-gray-500 max-w-md">{tpl.description}</td>
+                <td className="px-4 py-3 text-center text-gray-600">{tpl.sections.length}</td>
+                <td className="px-4 py-3 text-gray-600">{tpl.passingScore}</td>
+                <td className="px-4 py-3 text-right space-x-3">
+                  <button onClick={() => setPreviewing(tpl)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                    Preview
+                  </button>
+                  <button onClick={() => handleAssign(tpl)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                    Assign
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {previewing && (
+        <Modal title={`Template: ${previewing.name}`} onClose={() => setPreviewing(null)}>
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Description</p>
+              <p className="text-sm text-gray-700">{previewing.description}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Scoring</p>
+                <p className="text-sm text-gray-700">{previewing.scoring}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Passing Score</p>
+                <p className="text-sm text-gray-700">{previewing.passingScore}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-2">
+                Sections ({previewing.sections.length})
+              </p>
+              <ul className="space-y-1">
+                {previewing.sections.map((s, i) => (
+                  <li key={i} className="text-sm text-gray-700 flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                      {i + 1}
+                    </span>
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { handleAssign(previewing); setPreviewing(null) }}
+                className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                Assign to Employee
+              </button>
+              <button onClick={() => setPreviewing(null)}
+                className="border border-gray-300 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 // ─── MAIN SETTINGS PAGE ───────────────────────────────────────────────────────
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('Departments')
@@ -483,6 +640,7 @@ export default function Settings() {
                 {tab === 'Departments' && '🏢 '}
                 {tab === 'Facilities' && '🏥 '}
                 {tab === 'Users' && '👤 '}
+                {tab === 'Templates' && '📋 '}
                 {tab}
               </button>
             ))}
@@ -494,6 +652,7 @@ export default function Settings() {
           {activeTab === 'Departments' && <DepartmentsTab />}
           {activeTab === 'Facilities' && <FacilitiesTab />}
           {activeTab === 'Users' && <UsersTab />}
+          {activeTab === 'Templates' && <TemplatesTab />}
         </div>
       </div>
     </Layout>

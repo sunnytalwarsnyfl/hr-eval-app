@@ -232,4 +232,34 @@ router.post('/invite/accept', (req, res) => {
   }
 });
 
+// POST /api/auth/invite/set-password — public, employee creates account post-self-eval
+router.post('/invite/set-password', async (req, res) => {
+  const db = getDb();
+  const { token, password } = req.body;
+
+  if (!token || !password || password.length < 8) {
+    return res.status(400).json({ error: 'Token and password (min 8 chars) required' });
+  }
+
+  // Token must be marked as used (self-eval just submitted)
+  const user = db.prepare(`
+    SELECT * FROM users WHERE invite_token = ? AND invite_used = 1
+  `).get(token);
+
+  if (!user) return res.status(400).json({ error: 'Invalid or unused token' });
+
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    db.prepare(`
+      UPDATE users SET password_hash = ?, invite_token = NULL, invite_expires_at = NULL
+      WHERE id = ?
+    `).run(hash, user.id);
+
+    res.json({ success: true, message: 'Account created. You can now log in.' });
+  } catch (err) {
+    console.error('set-password error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

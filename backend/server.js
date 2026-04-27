@@ -35,6 +35,8 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/disciplinary', require('./routes/disciplinary'));
 app.use('/api/qa-log', require('./routes/qa-log'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/compliance', require('./routes/compliance'));
 
 // Runtime migrations
 try {
@@ -267,6 +269,14 @@ try {
   )`);
   console.log('Migration: ensured tech_review_scores, compliance_records, eval_notifications tables');
 } catch(e) { console.error('Migration error:', e.message); }
+
+// Start scheduled jobs
+try {
+  const { startJobs } = require('./jobs/scheduler');
+  startJobs(getDb());
+} catch (e) {
+  console.error('Scheduler start error:', e.message);
+}
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

@@ -114,6 +114,47 @@ export default function SelfEvalPortal() {
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState(null)
 
+  // Account creation post-submit
+  const [showAccountSetup, setShowAccountSetup] = useState(true)
+  const [accountSkipped, setAccountSkipped] = useState(false)
+  const [accountCreated, setAccountCreated] = useState(false)
+  const [pwd, setPwd] = useState('')
+  const [pwdConfirm, setPwdConfirm] = useState('')
+  const [pwdError, setPwdError] = useState(null)
+  const [pwdSubmitting, setPwdSubmitting] = useState(false)
+
+  async function handleCreateAccount(e) {
+    e.preventDefault()
+    setPwdError(null)
+    if (!pwd || pwd.length < 8) {
+      setPwdError('Password must be at least 8 characters')
+      return
+    }
+    if (pwd !== pwdConfirm) {
+      setPwdError('Passwords do not match')
+      return
+    }
+    setPwdSubmitting(true)
+    try {
+      const res = await fetch('/api/auth/invite/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ token, password: pwd })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setPwdError(data.error || 'Failed to create account')
+      } else {
+        setAccountCreated(true)
+      }
+    } catch (err) {
+      setPwdError('Network error creating account')
+    } finally {
+      setPwdSubmitting(false)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     async function check() {
@@ -220,11 +261,74 @@ export default function SelfEvalPortal() {
   if (submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="max-w-md w-full bg-white rounded-xl border border-green-200 shadow-sm p-8 text-center">
-          <div className="text-5xl mb-3">✅</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Self-Evaluation Submitted</h1>
-          <p className="text-gray-600 text-sm">Thank you, {employee?.name}. Your manager and HR have been notified.</p>
-          <p className="text-gray-400 text-xs mt-4">You may now close this window.</p>
+        <div className="max-w-md w-full bg-white rounded-xl border border-green-200 shadow-sm p-8">
+          <div className="text-center">
+            <div className="text-5xl mb-3">✅</div>
+            <h1 className="text-xl font-bold text-gray-900 mb-2">Self-Evaluation Submitted</h1>
+            <p className="text-gray-600 text-sm">Thank you, {employee?.name}. Your manager and HR have been notified.</p>
+          </div>
+
+          {accountCreated ? (
+            <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+              <p className="text-sm font-medium text-green-800">Account created!</p>
+              <p className="text-xs text-green-700 mt-1">You can now log in with your email and password.</p>
+              <a href="/login" className="inline-block mt-3 text-sm text-blue-600 hover:underline font-medium">
+                Go to Login →
+              </a>
+            </div>
+          ) : accountSkipped ? (
+            <p className="text-gray-400 text-xs mt-4 text-center">You may now close this window.</p>
+          ) : showAccountSetup ? (
+            <form onSubmit={handleCreateAccount} className="mt-6 pt-6 border-t border-gray-200">
+              <h2 className="text-sm font-semibold text-gray-800 mb-1">Create Account (Optional)</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Want to access your evaluations later? Set a password to create an account.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Password (min 8 characters)</label>
+                  <input
+                    type="password"
+                    value={pwd}
+                    onChange={e => setPwd(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={pwdConfirm}
+                    onChange={e => setPwdConfirm(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="••••••••"
+                  />
+                </div>
+                {pwdError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 p-2 rounded text-xs">
+                    {pwdError}
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="submit"
+                    disabled={pwdSubmitting}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {pwdSubmitting ? 'Creating...' : 'Create Account'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAccountSetup(false); setAccountSkipped(true) }}
+                    className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            </form>
+          ) : null}
         </div>
       </div>
     )
