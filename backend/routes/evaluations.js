@@ -324,6 +324,125 @@ router.patch('/:id/acknowledge', (req, res) => {
   res.json({ evaluation: updated });
 });
 
+// PATCH /api/evaluations/:id/hr-review — HR fills post-self-eval data
+router.patch('/:id/hr-review', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const {
+    attendance_occurrences,
+    disciplinary_count,
+    compliance_status,
+    belt_level_at_eval,
+    overall_score,
+    pay_increase_rate,
+    bonus_percentage,
+    hr_notes
+  } = req.body;
+
+  // Authorize: only admin or hr
+  if (!['admin', 'hr'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Forbidden — HR/Admin only' });
+  }
+
+  const existing = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Evaluation not found' });
+
+  try {
+    const now = new Date().toISOString();
+    db.prepare(`
+      UPDATE evaluations SET
+        hr_reviewed_at = ?,
+        hr_reviewed_by = ?,
+        attendance_occurrences = COALESCE(?, attendance_occurrences),
+        disciplinary_count = COALESCE(?, disciplinary_count),
+        compliance_status = COALESCE(?, compliance_status),
+        belt_level_at_eval = COALESCE(?, belt_level_at_eval),
+        overall_score = COALESCE(?, overall_score),
+        pay_increase_rate = COALESCE(?, pay_increase_rate),
+        bonus_percentage = COALESCE(?, bonus_percentage),
+        supervisor_comments = CASE WHEN ? IS NOT NULL AND ? != '' THEN COALESCE(supervisor_comments || char(10) || char(10), '') || '[HR Review] ' || ? ELSE supervisor_comments END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      now, req.user.id,
+      attendance_occurrences ?? null,
+      disciplinary_count ?? null,
+      compliance_status ?? null,
+      belt_level_at_eval ?? null,
+      overall_score ?? null,
+      pay_increase_rate ?? null,
+      bonus_percentage ?? null,
+      hr_notes || null,
+      hr_notes || null,
+      hr_notes || null,
+      id
+    );
+
+    const updated = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+    res.json({ evaluation: updated });
+  } catch (err) {
+    console.error('hr-review error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/evaluations/:id/hr-review-data — returns auto-pulled context for HR review
+router.get('/:id/hr-review-data', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const evaluation = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+  if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
+
+  const employeeId = evaluation.employee_id;
+
+  // Active attendance points
+  let attendancePoints = 0;
+  let attendanceCount = 0;
+  try {
+    const a = db.prepare(`
+      SELECT COALESCE(SUM(points), 0) AS total, COUNT(*) AS count
+      FROM attendance_log
+      WHERE employee_id = ? AND roll_off_date > date('now')
+    `).get(employeeId);
+    attendancePoints = a.total || 0;
+    attendanceCount = a.count || 0;
+  } catch (_) {}
+
+  // Disciplinary actions in last 12 months
+  let discCount = 0;
+  try {
+    const d = db.prepare(`
+      SELECT COUNT(*) AS count FROM disciplinary_actions
+      WHERE employee_id = ? AND date_of_incident >= date('now', '-12 months')
+    `).get(employeeId);
+    discCount = d.count || 0;
+  } catch (_) {}
+
+  // Compliance summary — count of active records, count of within-deadline
+  let complianceTotal = 0;
+  let complianceOnTime = 0;
+  try {
+    const c = db.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN renewed_within_deadline = 1 THEN 1 ELSE 0 END) AS on_time
+      FROM compliance_records WHERE employee_id = ?
+    `).get(employeeId);
+    complianceTotal = c.total || 0;
+    complianceOnTime = c.on_time || 0;
+  } catch (_) {}
+
+  // Employee belt level
+  const employee = db.prepare('SELECT belt_level FROM employees WHERE id = ?').get(employeeId);
+
+  res.json({
+    attendance: { points: attendancePoints, count: attendanceCount },
+    disciplinary: { count_12mo: discCount },
+    compliance: { total: complianceTotal, on_time: complianceOnTime, status: complianceTotal > 0 && complianceOnTime === complianceTotal ? 'Compliant' : (complianceTotal > 0 ? 'Non-Compliant' : 'No Records') },
+    employee_belt_level: employee?.belt_level || null
+  });
+});
+
 // DELETE /api/evaluations/:id
 router.delete('/:id', (req, res) => {
   const db = getDb();

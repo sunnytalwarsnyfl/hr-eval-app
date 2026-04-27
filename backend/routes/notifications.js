@@ -212,4 +212,110 @@ router.post('/reminder', requireRole('admin', 'hr'), async (req, res) => {
   }
 });
 
+// POST /api/notifications/reminders/bulk — send manual reminders for multiple employees
+router.post('/reminders/bulk', requireRole('admin', 'hr'), async (req, res) => {
+  const db = getDb();
+  const { reminders } = req.body; // [{ employee_id, manager_id, message }, ...]
+
+  if (!Array.isArray(reminders) || reminders.length === 0) {
+    return res.status(400).json({ error: 'reminders array required' });
+  }
+
+  const results = [];
+  for (const item of reminders) {
+    try {
+      const manager = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(item.manager_id);
+      const employee = db.prepare('SELECT id, name, department FROM employees WHERE id = ?').get(item.employee_id);
+
+      if (!manager || !manager.email) {
+        results.push({ employee_id: item.employee_id, status: 'skipped', reason: 'manager has no email' });
+        continue;
+      }
+      if (!employee) {
+        results.push({ employee_id: item.employee_id, status: 'skipped', reason: 'employee not found' });
+        continue;
+      }
+
+      const safeMessage = (item.message || '').toString();
+      const html = `
+        <h2 style="color:#1d4ed8;">SIPS HR — Reminder</h2>
+        <p>Hello ${manager.name},</p>
+        <p>This is a reminder regarding employee <strong>${employee.name}</strong>${employee.department ? ' (' + employee.department + ')' : ''}.</p>
+        <div style="background:#f9fafb;border-left:4px solid #1d4ed8;padding:12px;margin:12px 0;">
+          ${safeMessage.replace(/\n/g, '<br>') || '<em>Evaluation due soon. Please log in to take action.</em>'}
+        </div>
+        <p>Please log in to the SIPS HR Evaluation System to take any required action.</p>
+        <p style="color:#6b7280;font-size:12px;">Sent by ${req.user.name || req.user.email || 'HR'} via SIPS HR Evaluation System.</p>
+      `;
+
+      try {
+        await sendEmail({
+          to: manager.email,
+          subject: `SIPS HR Reminder — ${employee.name}`,
+          html
+        });
+      } catch (e) {
+        console.error('bulk reminder email error:', e.message);
+      }
+
+      // Log notification
+      try {
+        db.prepare(`
+          INSERT INTO eval_notifications (
+            employee_id, notification_type,
+            sent_to_role, sent_to_email, reminder_sent_manually, sent_by
+          )
+          VALUES (?, 'manual_reminder_bulk', 'manager', ?, 1, ?)
+        `).run(item.employee_id, manager.email, req.user.id);
+      } catch (_) {}
+
+      results.push({ employee_id: item.employee_id, status: 'sent', manager: manager.name });
+    } catch (err) {
+      results.push({ employee_id: item.employee_id, status: 'error', error: err.message });
+    }
+  }
+
+  res.json({
+    success: true,
+    total: reminders.length,
+    sent: results.filter(r => r.status === 'sent').length,
+    skipped: results.filter(r => r.status === 'skipped').length,
+    error: results.filter(r => r.status === 'error').length,
+    results
+  });
+});
+
+// GET /api/notifications/log — admin/HR only — returns recent eval_notifications
+router.get('/log', requireRole('admin', 'hr'), (req, res) => {
+  const db = getDb();
+  const { limit = 100, employee_id, type } = req.query;
+
+  let query = `
+    SELECT n.*, e.name AS employee_name, e.department,
+           u.name AS sent_by_name
+    FROM eval_notifications n
+    LEFT JOIN employees e ON n.employee_id = e.id
+    LEFT JOIN users u ON n.sent_by = u.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (employee_id) {
+    query += ' AND n.employee_id = ?';
+    params.push(employee_id);
+  }
+  if (type) {
+    query += ' AND n.notification_type = ?';
+    params.push(type);
+  }
+  query += ' ORDER BY n.sent_at DESC LIMIT ?';
+  params.push(Number(limit));
+
+  try {
+    const rows = db.prepare(query).all(...params);
+    res.json({ data: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

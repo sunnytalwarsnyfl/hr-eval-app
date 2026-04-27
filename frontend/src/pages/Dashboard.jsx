@@ -5,6 +5,7 @@ import KPICard from '../components/Dashboard/KPICard'
 import RecentEvalsTable from '../components/Dashboard/RecentEvalsTable'
 import ScoreChart from '../components/Dashboard/ScoreChart'
 import ReminderModal from '../components/Dashboard/ReminderModal'
+import BulkReminderModal from '../components/Dashboard/BulkReminderModal'
 import { reportsApi } from '../api/reports'
 import { notificationsApi } from '../api/notifications'
 import { attendanceApi, disciplinaryApi } from '../api/logs'
@@ -20,6 +21,9 @@ export default function Dashboard() {
   const [disciplinarySummary, setDisciplinarySummary] = useState(null)
   const [reminderTarget, setReminderTarget] = useState(null) // { employee, manager }
   const [reminderToast, setReminderToast] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [showBulkModal, setShowBulkModal] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
   const navigate = useNavigate()
   const { user } = useAuth()
 
@@ -229,6 +233,20 @@ export default function Dashboard() {
           />
         )}
 
+        {showBulkModal && (
+          <BulkReminderModal
+            employees={(data?.overdue_employees || []).filter(emp => selectedIds.has(emp.id))}
+            onClose={() => setShowBulkModal(false)}
+            onSent={(res) => {
+              setReminderToast({
+                type: 'success',
+                message: `Bulk reminders: sent ${res.sent}, skipped ${res.skipped}, errors ${res.error}.`
+              })
+              setSelectedIds(new Set())
+            }}
+          />
+        )}
+
         {reminderToast && (
           <div className={`fixed bottom-6 right-6 p-3 rounded-lg shadow-lg text-sm font-medium z-50 ${
             reminderToast.type === 'success'
@@ -253,36 +271,88 @@ export default function Dashboard() {
 
           {/* Overdue Employees */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h2 className="text-base font-semibold text-gray-800 mb-4">
-              Employees Overdue for Evaluation
-              {data?.overdue_employees?.length > 0 && (
-                <span className="ml-2 bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">
-                  {data.overdue_employees.length}
-                </span>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-gray-800">
+                Employees Overdue for Evaluation
+                {data?.overdue_employees?.length > 0 && (
+                  <span className="ml-2 bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">
+                    {data.overdue_employees.length}
+                  </span>
+                )}
+              </h2>
+              {isHrOrAdmin && data?.overdue_employees?.length > 0 && (
+                <button
+                  onClick={() => setShowBulkModal(true)}
+                  disabled={selectedIds.size === 0 || bulkSending}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Send Reminders to Selected ({selectedIds.size})
+                </button>
               )}
-            </h2>
+            </div>
             {(!data?.overdue_employees || data.overdue_employees.length === 0) ? (
               <p className="text-sm text-gray-500">All employees are up to date.</p>
             ) : (
-              <div className="space-y-3">
-                {data.overdue_employees.map(emp => (
-                  <div
-                    key={emp.id}
-                    className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-100 transition-colors"
-                    onClick={() => navigate(`/employees/${emp.id}`)}
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{emp.name}</p>
-                      <p className="text-xs text-gray-500">{emp.department} • {emp.belt_level || emp.tech_level || 'N/A'}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-red-600 font-medium">
-                        {emp.last_eval_date ? `Last: ${emp.last_eval_date}` : 'Never evaluated'}
-                      </p>
-                    </div>
+              <>
+                {isHrOrAdmin && (
+                  <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                    <input
+                      type="checkbox"
+                      id="select-all-overdue"
+                      checked={selectedIds.size === data.overdue_employees.length && data.overdue_employees.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(new Set(data.overdue_employees.map(emp => emp.id)))
+                        } else {
+                          setSelectedIds(new Set())
+                        }
+                      }}
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="select-all-overdue" className="text-xs font-medium text-gray-700 cursor-pointer">
+                      Select All
+                    </label>
                   </div>
-                ))}
-              </div>
+                )}
+                <div className="space-y-3">
+                  {data.overdue_employees.map(emp => (
+                    <div
+                      key={emp.id}
+                      className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
+                    >
+                      {isHrOrAdmin && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(emp.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedIds)
+                            if (e.target.checked) {
+                              next.add(emp.id)
+                            } else {
+                              next.delete(emp.id)
+                            }
+                            setSelectedIds(next)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-4 w-4 mr-3 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                      )}
+                      <div
+                        className="flex-1 cursor-pointer"
+                        onClick={() => navigate(`/employees/${emp.id}`)}
+                      >
+                        <p className="font-medium text-gray-900 text-sm">{emp.name}</p>
+                        <p className="text-xs text-gray-500">{emp.department} • {emp.belt_level || emp.tech_level || 'N/A'}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-red-600 font-medium">
+                          {emp.last_eval_date ? `Last: ${emp.last_eval_date}` : 'Never evaluated'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>

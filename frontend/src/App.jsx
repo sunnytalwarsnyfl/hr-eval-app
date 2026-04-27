@@ -24,6 +24,7 @@ import QALog from './pages/QALog'
 import SelfEvalPortal from './pages/SelfEvalPortal'
 import EmployeeMyEvals from './pages/EmployeeMyEvals'
 import DisciplinarySignPortal from './pages/DisciplinarySignPortal'
+import NotificationLog from './pages/NotificationLog'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -112,6 +113,9 @@ export default function App() {
           } />
           <Route path="/reports" element={
             <ProtectedRoute><Reports /></ProtectedRoute>
+          } />
+          <Route path="/notifications" element={
+            <ProtectedRoute><NotificationLog /></ProtectedRoute>
           } />
           <Route path="/settings" element={
             <ProtectedRoute><Settings /></ProtectedRoute>

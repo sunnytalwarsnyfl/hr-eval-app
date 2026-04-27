@@ -63,9 +63,11 @@ router.get('/dashboard', (req, res) => {
 
   // Overdue employees list
   const overdueEmployees = db.prepare(`
-    SELECT e.id, e.name, e.department, e.tech_level,
+    SELECT e.id, e.name, e.department, e.tech_level, e.belt_level, e.manager_id,
+           u.name AS manager_name, u.email AS manager_email,
            MAX(ev.evaluation_date) AS last_eval_date
     FROM employees e
+    LEFT JOIN users u ON e.manager_id = u.id
     LEFT JOIN evaluations ev ON e.id = ev.employee_id AND ev.status != 'Draft'
     WHERE e.active = 1
     GROUP BY e.id
