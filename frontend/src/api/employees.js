@@ -7,5 +7,6 @@ export const employeesApi = {
   update: (id, data) => client.put(`/employees/${id}`, data),
   remove: (id) => client.delete(`/employees/${id}`),
   sendInvite: (id) => client.post(`/employees/${id}/invite`),
+  inviteSelfEval: (id) => client.post(`/employees/${id}/invite-self-eval`),
   getManagers: () => client.get('/users/managers')
 }

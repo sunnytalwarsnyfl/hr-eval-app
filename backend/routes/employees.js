@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { getDb } = require('../db/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
+const { sendEmail } = require('../utils/mailer');
 
 router.use(authenticateToken);
 
@@ -119,21 +122,37 @@ router.get('/leaders', (req, res) => {
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
-  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, phone, employment_type, is_leadership, is_evaluator, belt_level } = req.body;
+  const {
+    name, email, hire_date, department, job_title, tech_level,
+    manager_id, facility_id, phone, employment_type,
+    is_leadership, is_evaluator, belt_level,
+    work_email, phone_number, anniversary_date
+  } = req.body;
 
   if (!name || !email || !hire_date || !department || !job_title) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  // work_email takes priority over email when both provided; phone_number takes priority over phone
+  const finalWorkEmail = work_email || email || null;
+  const finalPhoneNumber = phone_number || phone || null;
+  const finalAnniversaryDate = anniversary_date || hire_date;
+
   try {
     const result = db.prepare(`
-      INSERT INTO employees (name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, phone, employment_type, is_leadership, is_evaluator, belt_level)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO employees (
+        name, email, hire_date, department, job_title, tech_level,
+        manager_id, facility_id, phone, employment_type,
+        is_leadership, is_evaluator, belt_level,
+        work_email, phone_number, anniversary_date
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, email, hire_date, department, job_title,
       tech_level || null, manager_id || null, facility_id || null,
       phone || null, employment_type || 'Permanent',
-      is_leadership ? 1 : 0, is_evaluator ? 1 : 0, belt_level || null
+      is_leadership ? 1 : 0, is_evaluator ? 1 : 0, belt_level || null,
+      finalWorkEmail, finalPhoneNumber, finalAnniversaryDate
     );
 
     const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
@@ -150,17 +169,41 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = getDb();
   const { id } = req.params;
-  const { name, email, hire_date, department, job_title, tech_level, manager_id, facility_id, active, phone, employment_type, is_leadership, is_evaluator, belt_level } = req.body;
+  const {
+    name, email, hire_date, department, job_title, tech_level,
+    manager_id, facility_id, active, phone, employment_type,
+    is_leadership, is_evaluator, belt_level,
+    work_email, phone_number, anniversary_date
+  } = req.body;
 
   const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
   if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  // work_email priority: explicit work_email > explicit email > existing work_email > existing email
+  let finalWorkEmail;
+  if (work_email !== undefined) finalWorkEmail = work_email;
+  else if (email !== undefined) finalWorkEmail = email;
+  else finalWorkEmail = employee.work_email || employee.email;
+
+  // phone_number priority: explicit phone_number > explicit phone > existing phone_number > existing phone
+  let finalPhoneNumber;
+  if (phone_number !== undefined) finalPhoneNumber = phone_number;
+  else if (phone !== undefined) finalPhoneNumber = phone;
+  else finalPhoneNumber = employee.phone_number || employee.phone;
+
+  // anniversary_date defaults to hire_date if not provided and no existing value
+  let finalAnniversaryDate;
+  if (anniversary_date !== undefined) finalAnniversaryDate = anniversary_date;
+  else if (employee.anniversary_date) finalAnniversaryDate = employee.anniversary_date;
+  else finalAnniversaryDate = hire_date || employee.hire_date;
 
   try {
     db.prepare(`
       UPDATE employees
       SET name = ?, email = ?, hire_date = ?, department = ?, job_title = ?,
           tech_level = ?, manager_id = ?, facility_id = ?, active = ?,
-          phone = ?, employment_type = ?, is_leadership = ?, is_evaluator = ?, belt_level = ?
+          phone = ?, employment_type = ?, is_leadership = ?, is_evaluator = ?, belt_level = ?,
+          work_email = ?, phone_number = ?, anniversary_date = ?
       WHERE id = ?
     `).run(
       name || employee.name,
@@ -177,6 +220,9 @@ router.put('/:id', (req, res) => {
       is_leadership !== undefined ? (is_leadership ? 1 : 0) : employee.is_leadership,
       is_evaluator !== undefined ? (is_evaluator ? 1 : 0) : employee.is_evaluator,
       belt_level !== undefined ? belt_level : employee.belt_level,
+      finalWorkEmail,
+      finalPhoneNumber,
+      finalAnniversaryDate,
       id
     );
 
@@ -203,6 +249,98 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// GET /api/employees/:id/attendance
+router.get('/:id/attendance', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const employee = db.prepare('SELECT id, manager_id FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const records = db.prepare(`
+      SELECT a.*, f.name AS facility_name
+      FROM attendance_log a
+      LEFT JOIN facilities f ON a.facility_id = f.id
+      WHERE a.employee_id = ?
+      ORDER BY a.date_of_occurrence DESC, a.created_at DESC
+    `).all(id);
+    res.json({ data: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/employees/:id/qa-log
+router.get('/:id/qa-log', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const employee = db.prepare('SELECT id, manager_id FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const records = db.prepare(`
+      SELECT q.*, f.name AS facility_name
+      FROM qa_log q
+      LEFT JOIN facilities f ON q.facility_id = f.id
+      WHERE q.employee_id = ?
+      ORDER BY q.date_of_incident DESC, q.created_at DESC
+    `).all(id);
+    res.json({ data: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/employees/:id/disciplinary
+router.get('/:id/disciplinary', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const employee = db.prepare('SELECT id, manager_id FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const records = db.prepare(`
+      SELECT d.*, f.name AS facility_name
+      FROM disciplinary_actions d
+      LEFT JOIN facilities f ON d.facility_id = f.id
+      WHERE d.employee_id = ?
+      ORDER BY d.date_of_incident DESC, d.created_at DESC
+    `).all(id);
+    res.json({ data: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/employees/:id/pip
+router.get('/:id/pip', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const employee = db.prepare('SELECT id, manager_id FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const records = db.prepare(`
+      SELECT pp.*, ev.evaluation_date, ev.evaluation_type
+      FROM pip_plans pp
+      JOIN evaluations ev ON pp.evaluation_id = ev.id
+      WHERE ev.employee_id = ?
+      ORDER BY pp.created_at DESC
+    `).all(id);
+    res.json({ data: records });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/employees/:id/invite — send invite email (mock)
 router.post('/:id/invite', (req, res) => {
   const db = getDb();
@@ -224,6 +362,85 @@ router.post('/:id/invite', (req, res) => {
   }
 
   res.json({ success: true, message: `Invite sent to ${employee.email}` });
+});
+
+// POST /api/employees/:id/invite-self-eval — admin/hr/manager triggers self-eval invite
+router.post('/:id/invite-self-eval', requireRole('admin', 'hr', 'manager'), async (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+
+  const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+  if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+  // Manager scope check
+  if (req.user.role === 'manager' && employee.manager_id !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const targetEmail = employee.work_email || employee.email;
+  if (!targetEmail) {
+    return res.status(400).json({ error: 'Employee has no work email on file' });
+  }
+
+  try {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+    // Find existing user linked to this employee (by employee_id or by email)
+    let user = db.prepare(`
+      SELECT * FROM users
+      WHERE employee_id = ? OR email = ?
+      LIMIT 1
+    `).get(id, targetEmail);
+
+    if (user) {
+      db.prepare(`
+        UPDATE users
+        SET invite_token = ?, invite_expires_at = ?, invite_used = 0, employee_id = ?
+        WHERE id = ?
+      `).run(token, expiresAt, id, user.id);
+    } else {
+      // Create new user with role 'employee' — no usable password
+      const placeholderHash = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+      const result = db.prepare(`
+        INSERT INTO users (name, email, password_hash, role, department,
+                           invite_token, invite_expires_at, invite_used, employee_id)
+        VALUES (?, ?, ?, 'employee', ?, ?, ?, 0, ?)
+      `).run(
+        employee.name, targetEmail, placeholderHash,
+        employee.department || null, token, expiresAt, id
+      );
+      user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+    }
+
+    const APP_URL = process.env.APP_URL || '';
+    const link = `${APP_URL}/self-eval/invite/${token}`;
+
+    const html = `
+      <h2 style="color:#1d4ed8;">SIPS Healthcare — Self-Evaluation Invitation</h2>
+      <p>Hello ${employee.name},</p>
+      <p>You have been invited to complete a self-evaluation as part of your performance review process.</p>
+      <p>Please click the link below to begin. This link is valid for <strong>48 hours</strong>.</p>
+      <p><a href="${link}" style="background:#1d4ed8;color:white;padding:10px 16px;border-radius:6px;text-decoration:none;">Start Self-Evaluation</a></p>
+      <p style="font-size:12px;color:#6b7280;">Or copy this link: ${link}</p>
+      <p style="font-size:12px;color:#6b7280;">If you did not expect this email, please contact HR.</p>
+    `;
+
+    try {
+      await sendEmail({
+        to: targetEmail,
+        subject: 'Self-Evaluation Invite — SIPS Healthcare',
+        html
+      });
+    } catch (e) {
+      console.error('Self-eval invite email error:', e.message);
+    }
+
+    res.json({ success: true, sent_to: targetEmail });
+  } catch (err) {
+    console.error('invite-self-eval error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -2,10 +2,24 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import { reportsApi } from '../api/reports'
+import { attendanceApi, disciplinaryApi, qaLogApi } from '../api/logs'
+import { employeesApi } from '../api/employees'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend
 } from 'recharts'
+
+const BELT_COLORS = {
+  'White':  '#e5e7eb',
+  'Yellow': '#facc15',
+  'Orange': '#fb923c',
+  'Green':  '#22c55e',
+  'Blue':   '#3b82f6',
+  'Purple': '#a855f7',
+  'Brown':  '#92400e',
+  'Red':    '#ef4444',
+  'Black':  '#111827',
+}
 
 export default function Reports() {
   const navigate = useNavigate()
@@ -14,6 +28,10 @@ export default function Reports() {
   const [passFail, setPassFail] = useState(null)
   const [evalsDue, setEvalsDue] = useState([])
   const [pipTracking, setPipTracking] = useState([])
+  const [attendanceSummary, setAttendanceSummary] = useState([])
+  const [qaIncomplete, setQaIncomplete] = useState([])
+  const [discOpen, setDiscOpen] = useState([])
+  const [beltDistribution, setBeltDistribution] = useState([])
   const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState({ start: '', end: '' })
 
@@ -26,17 +44,58 @@ export default function Reports() {
       if (dateRange.start) params.start_date = dateRange.start
       if (dateRange.end) params.end_date = dateRange.end
 
-      const [deptRes, distRes, dueRes, pipRes] = await Promise.all([
+      const [deptRes, distRes, dueRes, pipRes, attSumRes, discSumRes, qaRes, empRes] = await Promise.all([
         reportsApi.deptScores(params),
         reportsApi.scoreDistribution(params),
         reportsApi.evalsDue(),
-        reportsApi.pipTracking()
+        reportsApi.pipTracking(),
+        attendanceApi.summary().catch(() => ({ data: { data: [] } })),
+        disciplinaryApi.summary().catch(() => ({ data: { data: [] } })),
+        qaLogApi.list().catch(() => ({ data: { data: [] } })),
+        employeesApi.list().catch(() => ({ data: { employees: [] } })),
       ])
       setDeptScores(deptRes.data.data)
       setDistribution(distRes.data.distribution)
       setPassFail(distRes.data.pass_fail)
       setEvalsDue(dueRes.data.data)
       setPipTracking(pipRes.data.data)
+
+      // Attendance summary (top 10 by active points)
+      const attRows = attSumRes.data.data || attSumRes.data.summary || attSumRes.data || []
+      const attSorted = [...(Array.isArray(attRows) ? attRows : [])]
+        .sort((a, b) => (b.active_points ?? b.accumulated_points ?? 0) - (a.active_points ?? a.accumulated_points ?? 0))
+        .slice(0, 10)
+      setAttendanceSummary(attSorted)
+
+      // Disciplinary open cases (Pending HR Review or Active)
+      const discRows = discSumRes.data.data || discSumRes.data.summary || discSumRes.data || []
+      const discList = Array.isArray(discRows) ? discRows : []
+      setDiscOpen(discList.filter(d => {
+        const s = (d.status || '').toLowerCase()
+        return s.includes('pending') || s === 'active' || s.includes('approved')
+      }))
+
+      // QA incomplete entries
+      const qaRows = qaRes.data.data || qaRes.data.entries || qaRes.data || []
+      const qaList = Array.isArray(qaRows) ? qaRows : []
+      setQaIncomplete(qaList.filter(q => {
+        const accum = q.accumulated_points ?? q.points ?? 0
+        return q.status === 'Incomplete' || q.disciplinary_triggered === 1 || accum >= 2
+      }))
+
+      // Belt level distribution from employees
+      const emps = empRes.data.employees || []
+      const beltCounts = {}
+      emps.forEach(e => {
+        const belt = e.belt_level || 'Unassigned'
+        beltCounts[belt] = (beltCounts[belt] || 0) + 1
+      })
+      const beltData = Object.entries(beltCounts).map(([name, value]) => ({
+        name,
+        value,
+        fill: BELT_COLORS[name] || '#9ca3af',
+      }))
+      setBeltDistribution(beltData)
     } catch (e) {
       console.error(e)
     } finally {
@@ -251,6 +310,161 @@ export default function Reports() {
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* Attendance + QA + Disciplinary Summary cards */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* Attendance Summary */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">Attendance Summary — Top 10 by Active Points</h2>
+                  <button onClick={() => navigate('/attendance')} className="text-xs text-blue-600 hover:text-blue-800">View all</button>
+                </div>
+                {attendanceSummary.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">No attendance data.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Facility</th>
+                        <th className="text-right px-4 py-2 font-medium text-gray-600">Active Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {attendanceSummary.map((row, i) => {
+                        const pts = row.active_points ?? row.accumulated_points ?? 0
+                        return (
+                          <tr key={row.employee_id || row.id || i} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 font-medium text-gray-900">{row.employee_name || row.name || '—'}</td>
+                            <td className="px-4 py-2 text-gray-600">{row.facility || row.facility_name || row.worksite || '—'}</td>
+                            <td className="px-4 py-2 text-right">
+                              <span className={`font-medium ${pts >= 5 ? 'text-red-600' : pts >= 3 ? 'text-orange-600' : 'text-gray-800'}`}>
+                                {pts}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* QA Summary - Disciplinary triggers */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">QA Summary — Triggering Disciplinary</h2>
+                  <button onClick={() => navigate('/qa-log')} className="text-xs text-blue-600 hover:text-blue-800">View all</button>
+                </div>
+                {qaIncomplete.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">No QA points triggering disciplinary action.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Issue Type</th>
+                        <th className="text-right px-4 py-2 font-medium text-gray-600">Pts</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {qaIncomplete.slice(0, 10).map((q, i) => (
+                        <tr key={q.id || i} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium text-gray-900">{q.employee_name || '—'}</td>
+                          <td className="px-4 py-2 text-gray-600 max-w-[12rem] truncate">{q.issue_type || q.issue || '—'}</td>
+                          <td className="px-4 py-2 text-right font-medium">{q.accumulated_points ?? q.points ?? '—'}</td>
+                          <td className="px-4 py-2">
+                            <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{q.status || '—'}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Disciplinary Open Cases + Belt Distribution */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">Disciplinary Open Cases</h2>
+                  <button onClick={() => navigate('/disciplinary')} className="text-xs text-blue-600 hover:text-blue-800">View all</button>
+                </div>
+                {discOpen.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">No open disciplinary cases.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Employee</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Action Level</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Status</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Issued</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {discOpen.slice(0, 15).map((d, i) => {
+                        const status = d.status || 'Pending HR Review'
+                        const cls = status === 'Pending HR Review' ? 'bg-yellow-100 text-yellow-700'
+                          : status === 'Approved' ? 'bg-blue-100 text-blue-700'
+                          : 'bg-orange-100 text-orange-700'
+                        return (
+                          <tr key={d.id || i} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 font-medium text-gray-900">{d.employee_name || '—'}</td>
+                            <td className="px-4 py-2 text-gray-600">{d.action_level || d.type || '—'}</td>
+                            <td className="px-4 py-2">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{status}</span>
+                            </td>
+                            <td className="px-4 py-2 text-gray-600">{d.issuance_date || '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Belt Level Distribution */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <h2 className="font-semibold text-gray-800 mb-4">Belt Level Distribution</h2>
+                {beltDistribution.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No belt data available.</p>
+                ) : (
+                  <div className="flex items-center gap-6">
+                    <ResponsiveContainer width="55%" height={240}>
+                      <PieChart>
+                        <Pie
+                          data={beltDistribution}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          innerRadius={45}
+                          dataKey="value"
+                          label={({ name, value }) => `${name} (${value})`}
+                          labelLine={false}
+                        >
+                          {beltDistribution.map((entry, i) => (
+                            <Cell key={i} fill={entry.fill} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex-1 space-y-1.5 text-sm">
+                      {beltDistribution.map(b => (
+                        <div key={b.name} className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full border border-gray-300" style={{ background: b.fill }} />
+                          <span className="text-gray-700">{b.name}</span>
+                          <span className="ml-auto font-medium">{b.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* PIP Tracking */}

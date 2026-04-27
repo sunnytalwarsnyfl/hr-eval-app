@@ -1,7 +1,43 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Shared/Layout'
 import { attendanceApi } from '../api/logs'
 import { employeesApi } from '../api/employees'
+
+const OCCURRENCE_CODES = [
+  { code: 'A',    label: 'Absent 1 day',           points: 1.0 },
+  { code: 'A3',   label: 'Absent 3+ days',         points: 1.0 },
+  { code: 'AA',   label: 'Approved Absence',       points: 0   },
+  { code: 'N',    label: 'No Call/No Show',        points: 1.0 },
+  { code: 'S',    label: 'Suspension',             points: 0   },
+  { code: 'T15',  label: 'Tardy 1-15 min',         points: 0.25 },
+  { code: 'T30',  label: 'Tardy 16-30 min',        points: 0.50 },
+  { code: 'T120', label: 'Tardy 31-120 min',       points: 0.75 },
+  { code: 'T121', label: 'Tardy 121+ min',         points: 1.0 },
+  { code: 'E15',  label: 'Early Out 1-15 min',     points: 0.25 },
+  { code: 'E30',  label: 'Early Out 16-30 min',    points: 0.50 },
+  { code: 'E120', label: 'Early Out 31-120 min',   points: 0.75 },
+  { code: 'E121', label: 'Early Out 121+ min',     points: 1.0 },
+  { code: 'TT',   label: 'Time Tracking violation', points: 1.0 },
+  { code: 'W',    label: 'Workers Comp',           points: 0   },
+]
+
+const DESCRIPTION_TYPES = ['Sick/Medical', 'Vacation', 'Personal', 'Other']
+
+function deriveOccurrenceType(code) {
+  if (!code) return ''
+  if (code === 'A' || code === 'A3' || code === 'AA') return 'Call-Out'
+  if (code.startsWith('T')) return 'Tardy'
+  if (code.startsWith('E')) return 'Early Out'
+  if (code === 'N') return 'No Call No Show'
+  if (code === 'S') return 'Suspension'
+  if (code === 'W') return 'Workers Comp'
+  if (code === 'TT') return 'Time Tracking'
+  return ''
+}
+
+function getCodeMeta(code) {
+  return OCCURRENCE_CODES.find(o => o.code === code)
+}
 
 export default function AttendanceLog() {
   const [entries, setEntries] = useState([])
@@ -13,10 +49,12 @@ export default function AttendanceLog() {
 
   const [form, setForm] = useState({
     employee_id: '',
+    facility: '',
     date_of_occurrence: '',
-    occurrence_type: '',
+    time_of_request: '',
+    occurrence_code: '',
+    description_type: '',
     description: '',
-    points: ''
   })
 
   useEffect(() => {
@@ -38,6 +76,21 @@ export default function AttendanceLog() {
     }
   }
 
+  const selectedEmployee = useMemo(
+    () => employees.find(e => String(e.id) === String(form.employee_id)),
+    [employees, form.employee_id]
+  )
+
+  // Auto-fill facility when employee is selected
+  useEffect(() => {
+    if (selectedEmployee) {
+      const empFacility = selectedEmployee.facility_name || selectedEmployee.worksite || selectedEmployee.facility || ''
+      if (empFacility && !form.facility) {
+        setForm(prev => ({ ...prev, facility: empFacility }))
+      }
+    }
+  }, [selectedEmployee])
+
   function handleChange(e) {
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
@@ -50,25 +103,53 @@ export default function AttendanceLog() {
     return d.toISOString().split('T')[0]
   }
 
+  const codeMeta = getCodeMeta(form.occurrence_code)
+  const autoPoints = codeMeta ? codeMeta.points : 0
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setSubmitting(true)
     try {
       const payload = {
-        ...form,
         employee_id: parseInt(form.employee_id),
-        points: parseFloat(form.points) || 0,
+        facility: form.facility,
+        date_of_occurrence: form.date_of_occurrence,
+        time_of_request: form.time_of_request,
+        occurrence_code: form.occurrence_code,
+        occurrence_type: deriveOccurrenceType(form.occurrence_code),
+        description_type: form.description_type,
+        description: form.description,
+        accumulated_points: autoPoints,
+        points: autoPoints,
         roll_off_date: calcRollOff(form.date_of_occurrence)
       }
       await attendanceApi.create(payload)
-      setForm({ employee_id: '', date_of_occurrence: '', occurrence_type: '', description: '', points: '' })
+      setForm({
+        employee_id: '',
+        facility: '',
+        date_of_occurrence: '',
+        time_of_request: '',
+        occurrence_code: '',
+        description_type: '',
+        description: '',
+      })
       setShowForm(false)
       loadData()
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create entry')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleAcknowledge(id) {
+    try {
+      await attendanceApi.acknowledge(id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+      alert(err.response?.data?.error || 'Failed to acknowledge')
     }
   }
 
@@ -98,6 +179,11 @@ export default function AttendanceLog() {
           Future integration: Automated attendance phone line can be connected here.
         </div>
 
+        {/* Phone integration banner */}
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-700">
+          <strong>Future Integration:</strong> Automated Attendance Phone Line (972-833-2121) — entries can be auto-logged when integrated.
+        </div>
+
         {/* Inline form */}
         {showForm && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -118,23 +204,55 @@ export default function AttendanceLog() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Facility</label>
+                  <input type="text" name="facility" value={form.facility} onChange={handleChange}
+                    placeholder="Auto-fills from employee, or enter manually"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date of Occurrence <span className="text-red-500">*</span></label>
                   <input type="date" name="date_of_occurrence" required value={form.date_of_occurrence} onChange={handleChange}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Occurrence Type <span className="text-red-500">*</span></label>
-                  <input type="text" name="occurrence_type" required value={form.occurrence_type} onChange={handleChange}
-                    placeholder="e.g. Tardy, No Call No Show"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Time of Request</label>
+                  <input type="time" name="time_of_request" value={form.time_of_request} onChange={handleChange}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Points <span className="text-red-500">*</span></label>
-                  <input type="number" name="points" required value={form.points} onChange={handleChange} step="0.5" min="0"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Occurrence Code <span className="text-red-500">*</span></label>
+                  <select name="occurrence_code" required value={form.occurrence_code} onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">Select code...</option>
+                    {OCCURRENCE_CODES.map(o => (
+                      <option key={o.code} value={o.code}>
+                        {o.code} — {o.label} ({o.points} pts)
+                      </option>
+                    ))}
+                  </select>
+                  {codeMeta && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Derived type: <span className="font-medium text-gray-700">{deriveOccurrenceType(form.occurrence_code)}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Roll-Off Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description Type</label>
+                  <select name="description_type" value={form.description_type} onChange={handleChange}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">Select type...</option>
+                    {DESCRIPTION_TYPES.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Points (auto)</label>
+                  <input type="text" readOnly value={form.occurrence_code ? `${autoPoints} pts` : 'Auto-calculated from code'}
+                    className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 font-medium" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Roll-Off Date (auto)</label>
                   <input type="text" readOnly value={calcRollOff(form.date_of_occurrence) || 'Auto-calculated (6 months)'}
                     className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-500" />
                 </div>
@@ -169,29 +287,48 @@ export default function AttendanceLog() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Employee Name</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Worksite</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Job Title</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Date of Occurrence</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Occurrence Type</th>
-                    <th className="text-center px-4 py-3 font-medium text-gray-600">Accumulated Points</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Roll-Off Date</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Description</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Employee</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Facility</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Code</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600">Points</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600">Accumulated</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Roll-Off</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-600">Acknowledged</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {(Array.isArray(entries) ? entries : []).map(entry => (
-                    <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900">{entry.employee_name || entry.name || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{entry.worksite || entry.facility_name || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{entry.job_title || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{entry.date_of_occurrence || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{entry.occurrence_type || '—'}</td>
-                      <td className="px-4 py-3 text-center font-medium">{entry.accumulated_points ?? entry.points ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{entry.roll_off_date || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600 max-w-xs truncate">{entry.description || '—'}</td>
-                    </tr>
-                  ))}
+                  {(Array.isArray(entries) ? entries : []).map(entry => {
+                    const ack = entry.acknowledged === 1 || entry.acknowledged === true
+                    return (
+                      <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-gray-900">{entry.employee_name || entry.name || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{entry.facility || entry.facility_name || entry.worksite || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{entry.date_of_occurrence || '—'}</td>
+                        <td className="px-4 py-3 font-medium text-gray-800">{entry.occurrence_code || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{entry.occurrence_type || '—'}</td>
+                        <td className="px-4 py-3 text-center font-medium">{entry.points ?? '—'}</td>
+                        <td className="px-4 py-3 text-center font-medium">{entry.accumulated_points ?? '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{entry.roll_off_date || '—'}</td>
+                        <td className="px-4 py-3 text-center">
+                          {ack ? (
+                            <span className="inline-flex items-center gap-1 text-green-700 text-xs font-medium">
+                              <span className="w-4 h-4 inline-flex items-center justify-center bg-green-100 rounded-full">✓</span>
+                              Acknowledged
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleAcknowledge(entry.id)}
+                              className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              Acknowledge
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

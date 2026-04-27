@@ -21,6 +21,7 @@ import NewTechEvaluation from './pages/NewTechEvaluation'
 import AttendanceLog from './pages/AttendanceLog'
 import DisciplinaryAction from './pages/DisciplinaryAction'
 import QALog from './pages/QALog'
+import SelfEvalPortal from './pages/SelfEvalPortal'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -46,6 +47,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+          <Route path="/self-eval/invite/:token" element={<SelfEvalPortal />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
           <Route path="/dashboard" element={

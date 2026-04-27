@@ -5,7 +5,7 @@ const { authenticateToken } = require('../middleware/auth');
 
 router.use(authenticateToken);
 
-// QA issue types and their point values
+// QA issue types and their point values (legacy free-text → points, kept for backward compat)
 const QA_ISSUE_POINTS = {
   'Bio Burden: Visible debris on instruments or trays': 4,
   'Broken instruments in set: Nonfunctional or breached integrity': 4,
@@ -16,6 +16,27 @@ const QA_ISSUE_POINTS = {
   'Incorrect tray on Case Carts: Adverse to preference card requirement': 2,
   'Incorrect decontamination process: Not using the proper decontamination process': 2,
 };
+
+// New canonical issue_type → points map
+const QA_POINTS_MAP = {
+  'Bio Burden': 4,
+  'Broken Instruments in Set': 4,
+  'Incorrect Instruments in Set': 2,
+  'Missing Instrument Documented as Found': 2,
+  'Missing Tray Filters': 2,
+  'Incomplete Trays': 2,
+  'Incorrect Tray on Case Carts': 2,
+  'Incorrect Decontamination Process': 2
+};
+
+function getQAActionRequired(totalPoints) {
+  if (totalPoints >= 10) return 'Termination';
+  if (totalPoints >= 8) return 'Final Written Warning';
+  if (totalPoints >= 6) return 'Written Warning with Additional Training';
+  if (totalPoints >= 4) return 'Written Warning with Counseling';
+  if (totalPoints >= 2) return 'Verbal Warning';
+  return null;
+}
 
 // GET /api/qa-log — list all with employee info
 router.get('/', (req, res) => {
@@ -76,23 +97,71 @@ router.get('/:id', (req, res) => {
 // POST /api/qa-log — create new entry
 router.post('/', (req, res) => {
   const db = getDb();
-  const { employee_id, date_of_incident, issue, description, roll_off_date, status, action_step } = req.body;
+  const {
+    employee_id, date_of_incident,
+    issue, description, status,
+    action_step, action_taken,
+    issue_type, facility_id,
+    attachment_path, employee_initials, manager_initials
+  } = req.body;
+  let { roll_off_date } = req.body;
 
   if (!employee_id || !date_of_incident) {
     return res.status(400).json({ error: 'employee_id and date_of_incident are required' });
   }
 
-  // Auto-calculate points from issue type
-  const points = issue ? (QA_ISSUE_POINTS[issue] || 0) : 0;
+  // Determine points: prefer new issue_type → QA_POINTS_MAP; fall back to legacy free-text issue
+  let issuePoints = 0;
+  if (issue_type && QA_POINTS_MAP[issue_type] !== undefined) {
+    issuePoints = QA_POINTS_MAP[issue_type];
+  } else if (issue && QA_ISSUE_POINTS[issue] !== undefined) {
+    issuePoints = QA_ISSUE_POINTS[issue];
+  }
+
+  // Roll off date: 12 months from date_of_incident (override only if explicitly provided)
+  if (!roll_off_date) {
+    const d = new Date(date_of_incident);
+    d.setMonth(d.getMonth() + 12);
+    roll_off_date = d.toISOString().split('T')[0];
+  }
+
+  // Calculate accumulated active QA points for this employee (12-month rolling window)
+  const activeRow = db.prepare(`
+    SELECT COALESCE(SUM(COALESCE(issue_points, accumulated_points, 0)), 0) AS total
+    FROM qa_log
+    WHERE employee_id = ? AND roll_off_date > date('now')
+  `).get(employee_id);
+  const accumulatedTotal = (activeRow.total || 0) + issuePoints;
+
+  // Determine action from threshold
+  const computedAction = getQAActionRequired(accumulatedTotal);
+  const finalActionTaken = action_taken || computedAction || null;
+  const disciplinaryTriggered = accumulatedTotal >= 6 ? 1 : 0;
+
+  // Resolve facility_id from employee if not given
+  let resolvedFacilityId = facility_id;
+  if (!resolvedFacilityId) {
+    const emp = db.prepare('SELECT facility_id FROM employees WHERE id = ?').get(employee_id);
+    resolvedFacilityId = emp ? emp.facility_id : null;
+  }
 
   try {
     const result = db.prepare(`
-      INSERT INTO qa_log (employee_id, date_of_incident, issue, description, accumulated_points, roll_off_date, status, action_step, notification_sent, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      INSERT INTO qa_log (
+        employee_id, date_of_incident, issue, description,
+        accumulated_points, roll_off_date, status, action_step,
+        notification_sent, created_by,
+        facility_id, issue_type, issue_points, attachment_path,
+        employee_initials, manager_initials, action_taken, disciplinary_triggered
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       employee_id, date_of_incident, issue || null, description || null,
-      points, roll_off_date || null, status || 'Incomplete',
-      action_step || null, req.user.id
+      issuePoints, roll_off_date, status || 'Incomplete',
+      action_step || null, req.user.id,
+      resolvedFacilityId || null, issue_type || null, issuePoints,
+      attachment_path || null, employee_initials || null, manager_initials || null,
+      finalActionTaken, disciplinaryTriggered
     );
 
     const entry = db.prepare('SELECT * FROM qa_log WHERE id = ?').get(result.lastInsertRowid);
@@ -109,8 +178,10 @@ router.post('/', (req, res) => {
             subject: `QA Log Entry - ${employee.name}`,
             html: `<p>A new QA log entry has been created for <strong>${employee.name}</strong>.</p>
               <p><strong>Date of Incident:</strong> ${date_of_incident}</p>
-              <p><strong>Issue:</strong> ${issue || 'N/A'}</p>
-              <p><strong>Points:</strong> ${points}</p>
+              <p><strong>Issue Type:</strong> ${issue_type || issue || 'N/A'}</p>
+              <p><strong>Points:</strong> ${issuePoints}</p>
+              <p><strong>Total Active Points:</strong> ${accumulatedTotal}</p>
+              <p><strong>Action Required:</strong> ${finalActionTaken || 'None'}</p>
               <p><strong>Description:</strong> ${description || 'N/A'}</p>`
           }).catch(err => console.error('Email error (manager):', err.message));
 
@@ -122,7 +193,7 @@ router.post('/', (req, res) => {
       }
     }
 
-    res.status(201).json({ data: entry });
+    res.status(201).json({ data: entry, accumulated_total: accumulatedTotal, action_required: finalActionTaken });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

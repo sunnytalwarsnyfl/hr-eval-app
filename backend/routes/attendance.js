@@ -3,6 +3,16 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
+function getAttendancePoints(occurrenceCode) {
+  const map = {
+    'A': 1.0, 'A3': 1.0, 'AA': 0.0, 'N': 1.0,
+    'S': 0.0, 'W': 0.0, 'TT': 1.0,
+    'T15': 0.25, 'T30': 0.50, 'T120': 0.75, 'T121': 1.0,
+    'E15': 0.25, 'E30': 0.50, 'E120': 0.75, 'E121': 1.0
+  };
+  return map[occurrenceCode] ?? 0;
+}
+
 router.use(authenticateToken);
 
 // GET /api/attendance/summary — per-employee accumulated points summary
@@ -83,7 +93,11 @@ router.get('/:id', (req, res) => {
 // POST /api/attendance — create new entry
 router.post('/', (req, res) => {
   const db = getDb();
-  const { employee_id, date_of_occurrence, occurrence_type, description, accumulated_points, next_step } = req.body;
+  const {
+    employee_id, date_of_occurrence, occurrence_type, description,
+    accumulated_points, next_step,
+    occurrence_code, time_of_request, description_type, facility_id
+  } = req.body;
 
   if (!employee_id || !date_of_occurrence) {
     return res.status(400).json({ error: 'employee_id and date_of_occurrence are required' });
@@ -94,24 +108,68 @@ router.post('/', (req, res) => {
   occDate.setMonth(occDate.getMonth() + 6);
   const roll_off_date = occDate.toISOString().split('T')[0];
 
-  // Calculate accumulated points: sum of all active (non-rolled-off) attendance points for this employee
+  // Determine points: prefer occurrence_code lookup; fall back to accumulated_points for backward compat
+  let points;
+  if (occurrence_code) {
+    points = getAttendancePoints(occurrence_code);
+  } else if (accumulated_points !== undefined && accumulated_points !== null) {
+    points = Number(accumulated_points) || 0;
+  } else {
+    points = 0;
+  }
+
+  // Calculate accumulated active points for this employee (using new `points` column when present, else legacy accumulated_points)
   const activePoints = db.prepare(`
-    SELECT COALESCE(SUM(accumulated_points), 0) AS total
+    SELECT COALESCE(SUM(COALESCE(points, accumulated_points, 0)), 0) AS total
     FROM attendance_log
     WHERE employee_id = ? AND roll_off_date > date('now')
   `).get(employee_id);
 
-  const points = (accumulated_points || 0);
-  const newAccumulated = activePoints.total + points;
+  const newAccumulated = (activePoints.total || 0) + points;
+
+  // Resolve facility_id: explicit body wins; else fall back to employee's facility
+  let resolvedFacilityId = facility_id;
+  if (!resolvedFacilityId) {
+    const emp = db.prepare('SELECT facility_id FROM employees WHERE id = ?').get(employee_id);
+    resolvedFacilityId = emp ? emp.facility_id : null;
+  }
 
   try {
     const result = db.prepare(`
-      INSERT INTO attendance_log (employee_id, date_of_occurrence, occurrence_type, description, accumulated_points, roll_off_date, next_step, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(employee_id, date_of_occurrence, occurrence_type || null, description || null, points, roll_off_date, next_step || null, req.user.id);
+      INSERT INTO attendance_log (
+        employee_id, date_of_occurrence, occurrence_type, description,
+        accumulated_points, points, roll_off_date, next_step, created_by,
+        occurrence_code, time_of_request, description_type, facility_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      employee_id, date_of_occurrence, occurrence_type || null, description || null,
+      points, points, roll_off_date, next_step || null, req.user.id,
+      occurrence_code || null, time_of_request || null, description_type || null, resolvedFacilityId || null
+    );
 
     const entry = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ data: entry, accumulated_total: newAccumulated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/attendance/:id/acknowledge — employee acknowledgment
+router.post('/:id/acknowledge', (req, res) => {
+  const db = getDb();
+  const { id } = req.params;
+  const existing = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  try {
+    db.prepare(`
+      UPDATE attendance_log
+      SET acknowledged_by_employee = 1, acknowledged_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(id);
+    const updated = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(id);
+    res.json({ data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Layout from '../components/Shared/Layout'
 import StatusBadge from '../components/Shared/StatusBadge'
 import { employeesApi } from '../api/employees'
+import { useAuth } from '../App'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts'
@@ -19,12 +20,31 @@ const BELT_LEVEL_COLORS = {
 export default function EmployeeProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [employee, setEmployee] = useState(null)
   const [evaluations, setEvaluations] = useState([])
   const [pipPlans, setPipPlans] = useState([])
   const [loading, setLoading] = useState(true)
+  const [inviteSending, setInviteSending] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  const canInviteSelfEval = user && ['admin', 'hr', 'manager'].includes(user.role)
 
   useEffect(() => { loadEmployee() }, [id])
+
+  async function handleSendSelfEvalInvite() {
+    setInviteSending(true)
+    setToast(null)
+    try {
+      const res = await employeesApi.inviteSelfEval(id)
+      setToast({ type: 'success', message: `Self-eval invite sent to ${res.data.sent_to}` })
+    } catch (err) {
+      setToast({ type: 'error', message: err.response?.data?.error || 'Failed to send invite' })
+    } finally {
+      setInviteSending(false)
+      setTimeout(() => setToast(null), 5000)
+    }
+  }
 
   async function loadEmployee() {
     try {
@@ -81,13 +101,34 @@ export default function EmployeeProfile() {
             <h1 className="text-2xl font-bold text-gray-900">{employee.name}</h1>
             <p className="text-gray-500 text-sm mt-1">{employee.job_title} • {employee.department}</p>
           </div>
-          <button
-            onClick={() => navigate('/evaluations/new')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            + Start New Evaluation
-          </button>
+          <div className="flex items-center gap-2">
+            {canInviteSelfEval && (
+              <button
+                onClick={handleSendSelfEvalInvite}
+                disabled={inviteSending}
+                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                {inviteSending ? 'Sending...' : 'Send Self-Eval Invite'}
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/evaluations/new')}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              + Start New Evaluation
+            </button>
+          </div>
         </div>
+
+        {toast && (
+          <div className={`p-3 rounded-lg text-sm font-medium ${
+            toast.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {toast.message}
+          </div>
+        )}
 
         {/* Employee info card */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">

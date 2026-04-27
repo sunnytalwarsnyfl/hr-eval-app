@@ -144,4 +144,72 @@ router.post('/invite/:employeeId', requireRole('admin', 'hr', 'manager'), async 
   }
 });
 
+// POST /api/notifications/reminder — admin/HR sends a manual reminder to a manager
+router.post('/reminder', requireRole('admin', 'hr'), async (req, res) => {
+  const db = getDb();
+  const { employee_id, manager_id, message } = req.body;
+
+  if (!employee_id || !manager_id) {
+    return res.status(400).json({ error: 'employee_id and manager_id are required' });
+  }
+
+  try {
+    const manager = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(manager_id);
+    if (!manager) return res.status(404).json({ error: 'Manager not found' });
+    if (!manager.email) return res.status(400).json({ error: 'Manager has no email on file' });
+
+    const employee = db.prepare('SELECT id, name, department, job_title FROM employees WHERE id = ?').get(employee_id);
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+    const safeMessage = (message || '').toString();
+    const html = `
+      <h2 style="color:#1d4ed8;">SIPS HR — Manual Reminder</h2>
+      <p>Hello ${manager.name},</p>
+      <p>This is a reminder regarding employee <strong>${employee.name}</strong>${employee.department ? ' (' + employee.department + ')' : ''}.</p>
+      <div style="background:#f9fafb;border-left:4px solid #1d4ed8;padding:12px;margin:12px 0;">
+        ${safeMessage.replace(/\n/g, '<br>') || '<em>No additional message provided.</em>'}
+      </div>
+      <p>Please log in to the SIPS HR Evaluation System to take any required action.</p>
+      <p style="color:#6b7280;font-size:12px;">Sent by ${req.user.name || req.user.email || 'HR'} via SIPS HR Evaluation System.</p>
+    `;
+
+    let emailStatus = 'sent';
+    try {
+      await sendEmail({
+        to: manager.email,
+        subject: `SIPS HR Reminder — ${employee.name}`,
+        html
+      });
+    } catch (emailErr) {
+      console.error('Reminder email error:', emailErr.message);
+      emailStatus = 'error';
+    }
+
+    // Insert into eval_notifications
+    let notificationId = null;
+    try {
+      const result = db.prepare(`
+        INSERT INTO eval_notifications (
+          employee_id, evaluation_id, notification_type,
+          sent_to_role, sent_to_email, reminder_sent_manually, sent_by
+        )
+        VALUES (?, NULL, 'manual_reminder', 'manager', ?, 1, ?)
+      `).run(employee_id, manager.email, req.user.id);
+      notificationId = result.lastInsertRowid;
+    } catch (insErr) {
+      console.error('eval_notifications insert error:', insErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Reminder sent to ${manager.name} <${manager.email}>`,
+      notification_id: notificationId,
+      email_status: emailStatus
+    });
+  } catch (err) {
+    console.error('reminder error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

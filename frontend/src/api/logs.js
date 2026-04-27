@@ -7,6 +7,7 @@ export const attendanceApi = {
   update: (id, data) => client.put(`/attendance/${id}`, data),
   remove: (id) => client.delete(`/attendance/${id}`),
   summary: () => client.get('/attendance/summary'),
+  acknowledge: (id) => client.post(`/attendance/${id}/acknowledge`),
 }
 
 export const disciplinaryApi = {
@@ -16,6 +17,9 @@ export const disciplinaryApi = {
   update: (id, data) => client.put(`/disciplinary/${id}`, data),
   remove: (id) => client.delete(`/disciplinary/${id}`),
   summary: () => client.get('/disciplinary/summary'),
+  approve: (id) => client.post(`/disciplinary/${id}/approve`),
+  signEmployee: (id, data) => client.post(`/disciplinary/${id}/sign-employee`, data),
+  signManager: (id, data) => client.post(`/disciplinary/${id}/sign-manager`, data),
 }
 
 export const qaLogApi = {

@@ -4,6 +4,7 @@ import Layout from '../components/Shared/Layout'
 import KPICard from '../components/Dashboard/KPICard'
 import RecentEvalsTable from '../components/Dashboard/RecentEvalsTable'
 import ScoreChart from '../components/Dashboard/ScoreChart'
+import ReminderModal from '../components/Dashboard/ReminderModal'
 import { reportsApi } from '../api/reports'
 import { notificationsApi } from '../api/notifications'
 import { attendanceApi, disciplinaryApi } from '../api/logs'
@@ -17,6 +18,8 @@ export default function Dashboard() {
   const [sendingReminders, setSendingReminders] = useState(false)
   const [attendanceSummary, setAttendanceSummary] = useState(null)
   const [disciplinarySummary, setDisciplinarySummary] = useState(null)
+  const [reminderTarget, setReminderTarget] = useState(null) // { employee, manager }
+  const [reminderToast, setReminderToast] = useState(null)
   const navigate = useNavigate()
   const { user } = useAuth()
 
@@ -180,21 +183,63 @@ export default function Dashboard() {
               {data.employees_due_list.map(emp => (
                 <div
                   key={emp.id}
-                  className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-100 cursor-pointer hover:bg-yellow-100 transition-colors"
-                  onClick={() => navigate(`/employees/${emp.id}`)}
+                  className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-100 hover:bg-yellow-100 transition-colors"
                 >
-                  <div>
+                  <div
+                    className="flex-1 cursor-pointer"
+                    onClick={() => navigate(`/employees/${emp.id}`)}
+                  >
                     <p className="font-medium text-gray-900 text-sm">{emp.name}</p>
                     <p className="text-xs text-gray-500">{emp.department} - {emp.job_title}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex items-center gap-3">
                     <p className="text-xs text-yellow-700 font-medium">
                       Anniversary: {emp.anniversary_date || emp.hire_date}
                     </p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setReminderTarget({
+                          employee: emp,
+                          manager: emp.manager_id
+                            ? { id: emp.manager_id, name: emp.manager_name, email: emp.manager_email }
+                            : null
+                        })
+                      }}
+                      className="px-3 py-1 bg-white border border-yellow-300 text-yellow-800 rounded-md text-xs font-medium hover:bg-yellow-50"
+                    >
+                      Send Reminder
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {reminderTarget && (
+          <ReminderModal
+            employee={reminderTarget.employee}
+            manager={reminderTarget.manager}
+            onClose={() => setReminderTarget(null)}
+            onSent={(data) => setReminderToast({
+              type: 'success',
+              message: data?.message || 'Reminder sent.'
+            })}
+          />
+        )}
+
+        {reminderToast && (
+          <div className={`fixed bottom-6 right-6 p-3 rounded-lg shadow-lg text-sm font-medium z-50 ${
+            reminderToast.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : 'bg-red-50 border border-red-200 text-red-700'
+          }`}>
+            {reminderToast.message}
+            <button
+              onClick={() => setReminderToast(null)}
+              className="ml-3 text-gray-500 hover:text-gray-700"
+            >×</button>
           </div>
         )}
 
