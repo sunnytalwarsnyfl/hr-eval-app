@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { getDb } = require('../db/database');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 const { sendEmail } = require('../utils/mailer');
+const { audit } = require('../utils/auditLog');
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -45,6 +46,10 @@ router.post('/login', (req, res) => {
     maxAge: 8 * 60 * 60 * 1000
   });
 
+  try {
+    audit({ ...req, user }, 'login', 'auth', user.id, { email: user.email });
+  } catch (_) {}
+
   res.json({
     user: {
       id: user.id,
@@ -59,6 +64,16 @@ router.post('/login', (req, res) => {
 
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
+  // Try to extract user from token cookie for audit
+  try {
+    const tok = req.cookies?.token;
+    if (tok) {
+      const decoded = jwt.verify(tok, JWT_SECRET);
+      audit({ ...req, user: decoded }, 'logout', 'auth', decoded?.id);
+    } else {
+      audit(req, 'logout', 'auth', null);
+    }
+  } catch (_) {}
   res.clearCookie('token');
   res.json({ message: 'Logged out successfully' });
 });

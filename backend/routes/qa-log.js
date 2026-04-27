@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
+const { audit } = require('../utils/auditLog');
 
 router.use(authenticateToken);
 
@@ -210,6 +211,7 @@ router.post('/', (req, res) => {
       }
     }
 
+    try { audit(req, 'create', 'qa_log', entry.id, { issue_type, employee_id }); } catch (_) {}
     res.status(201).json({ data: entry, accumulated_total: accumulatedTotal, action_required: finalActionTaken });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -253,6 +255,7 @@ router.put('/:id', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM qa_log WHERE id = ?').get(id);
+    try { audit(req, 'update', 'qa_log', Number(id)); } catch (_) {}
     res.json({ data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -267,6 +270,7 @@ router.delete('/:id', (req, res) => {
 
   try {
     db.prepare('DELETE FROM qa_log WHERE id = ?').run(req.params.id);
+    try { audit(req, 'delete', 'qa_log', Number(req.params.id)); } catch (_) {}
     res.json({ message: 'Deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -32,9 +32,9 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-6 sm:px-6">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
+        <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900">SIPS HR Evaluation System</h1>
             <p className="text-gray-500 text-sm mt-2">Performance Management Portal</p>
@@ -54,7 +54,7 @@ export default function Login() {
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                 placeholder="admin@company.com"
               />
             </div>
@@ -65,14 +65,14 @@ export default function Login() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                 placeholder="••••••••"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white rounded-lg py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="w-full bg-blue-600 text-white rounded-lg py-3 min-h-[44px] font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>

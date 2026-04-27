@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { audit } = require('../utils/auditLog');
 
 function getAttendancePoints(occurrenceCode) {
   const map = {
@@ -163,6 +164,7 @@ router.post('/', (req, res) => {
     );
 
     const entry = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(result.lastInsertRowid);
+    try { audit(req, 'create', 'attendance', entry.id, { occurrence_code, employee_id }); } catch (_) {}
     res.status(201).json({ data: entry, accumulated_total: newAccumulated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -183,6 +185,7 @@ router.post('/:id/acknowledge', (req, res) => {
       WHERE id = ?
     `).run(id);
     const updated = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(id);
+    try { audit(req, 'acknowledge', 'attendance', Number(id)); } catch (_) {}
     res.json({ data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -215,6 +218,7 @@ router.put('/:id', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM attendance_log WHERE id = ?').get(id);
+    try { audit(req, 'update', 'attendance', Number(id)); } catch (_) {}
     res.json({ data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -229,6 +233,7 @@ router.delete('/:id', (req, res) => {
 
   try {
     db.prepare('DELETE FROM attendance_log WHERE id = ?').run(req.params.id);
+    try { audit(req, 'delete', 'attendance', Number(req.params.id)); } catch (_) {}
     res.json({ message: 'Deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

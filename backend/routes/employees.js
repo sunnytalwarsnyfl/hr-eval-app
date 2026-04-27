@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { getDb } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { sendEmail } = require('../utils/mailer');
+const { audit } = require('../utils/auditLog');
 
 router.use(authenticateToken);
 
@@ -156,6 +157,7 @@ router.post('/', (req, res) => {
     );
 
     const employee = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
+    try { audit(req, 'create', 'employee', employee.id, { name: employee.name, department: employee.department }); } catch (_) {}
     res.status(201).json({ employee });
   } catch (err) {
     if (err.message.includes('UNIQUE constraint')) {
@@ -227,6 +229,7 @@ router.put('/:id', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM employees WHERE id = ?').get(id);
+    try { audit(req, 'update', 'employee', Number(id)); } catch (_) {}
     res.json({ employee: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -243,6 +246,7 @@ router.delete('/:id', (req, res) => {
 
   try {
     db.prepare('UPDATE employees SET active = 0 WHERE id = ?').run(id);
+    try { audit(req, 'delete', 'employee', Number(id)); } catch (_) {}
     res.json({ message: 'Employee deactivated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -436,6 +440,7 @@ router.post('/:id/invite-self-eval', requireRole('admin', 'hr', 'manager'), asyn
       console.error('Self-eval invite email error:', e.message);
     }
 
+    try { audit(req, 'invite_self_eval', 'employee', Number(id), { sent_to: targetEmail }); } catch (_) {}
     res.json({ success: true, sent_to: targetEmail });
   } catch (err) {
     console.error('invite-self-eval error:', err);
@@ -521,6 +526,7 @@ router.post('/bulk/invite-self-eval', requireRole('admin', 'hr', 'manager'), asy
     }
   }
 
+  try { audit(req, 'bulk_invite', 'employee', null, { count: employee_ids.length }); } catch (_) {}
   res.json({
     total: employee_ids.length,
     sent: results.filter(r => r.status === 'sent').length,
@@ -545,6 +551,7 @@ router.post('/bulk/deactivate', requireRole('admin', 'hr'), (req, res) => {
       updated += r.changes;
     } catch (_) {}
   }
+  try { audit(req, 'bulk_deactivate', 'employee', null, { count: employee_ids.length }); } catch (_) {}
   res.json({ total: employee_ids.length, deactivated: updated });
 });
 

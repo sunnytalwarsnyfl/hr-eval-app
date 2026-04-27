@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { getDb } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { audit } = require('../utils/auditLog');
 
 router.use(authenticateToken);
 
@@ -23,6 +24,7 @@ router.post('/departments', requireRole('admin', 'hr'), (req, res) => {
       'INSERT INTO departments (name, description) VALUES (?, ?)'
     ).run(name.trim(), description || null);
     const row = db.prepare('SELECT * FROM departments WHERE id = ?').get(result.lastInsertRowid);
+    try { audit(req, 'create', 'department', row.id, { name: row.name }); } catch (_) {}
     res.status(201).json({ department: row });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Department already exists' });
@@ -44,6 +46,7 @@ router.put('/departments/:id', requireRole('admin', 'hr'), (req, res) => {
       active !== undefined ? (active ? 1 : 0) : existing.active,
       req.params.id
     );
+    try { audit(req, 'update', 'department', Number(req.params.id)); } catch (_) {}
     res.json({ department: db.prepare('SELECT * FROM departments WHERE id = ?').get(req.params.id) });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Department name already exists' });
@@ -54,6 +57,7 @@ router.put('/departments/:id', requireRole('admin', 'hr'), (req, res) => {
 router.delete('/departments/:id', requireRole('admin'), (req, res) => {
   const db = getDb();
   db.prepare('UPDATE departments SET active = 0 WHERE id = ?').run(req.params.id);
+  try { audit(req, 'delete', 'department', Number(req.params.id)); } catch (_) {}
   res.json({ message: 'Department deactivated' });
 });
 
@@ -76,6 +80,7 @@ router.post('/facilities', requireRole('admin', 'hr'), (req, res) => {
     `).run(name.trim(), address || null, city || null, state || null,
            contact_name || null, contact_email || null, contact_phone || null);
     const row = db.prepare('SELECT * FROM facilities WHERE id = ?').get(result.lastInsertRowid);
+    try { audit(req, 'create', 'facility', row.id, { name: row.name }); } catch (_) {}
     res.status(201).json({ facility: row });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -103,6 +108,7 @@ router.put('/facilities/:id', requireRole('admin', 'hr'), (req, res) => {
       active !== undefined ? (active ? 1 : 0) : existing.active,
       req.params.id
     );
+    try { audit(req, 'update', 'facility', Number(req.params.id)); } catch (_) {}
     res.json({ facility: db.prepare('SELECT * FROM facilities WHERE id = ?').get(req.params.id) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -112,6 +118,7 @@ router.put('/facilities/:id', requireRole('admin', 'hr'), (req, res) => {
 router.delete('/facilities/:id', requireRole('admin'), (req, res) => {
   const db = getDb();
   db.prepare('UPDATE facilities SET active = 0 WHERE id = ?').run(req.params.id);
+  try { audit(req, 'delete', 'facility', Number(req.params.id)); } catch (_) {}
   res.json({ message: 'Facility deactivated' });
 });
 
@@ -137,6 +144,7 @@ router.post('/users', requireRole('admin'), (req, res) => {
       'INSERT INTO users (name, email, password_hash, role, department) VALUES (?, ?, ?, ?, ?)'
     ).run(name, email, hash, role, department || null);
     const user = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(result.lastInsertRowid);
+    try { audit(req, 'create', 'user', user.id, { email: user.email, role: user.role }); } catch (_) {}
     res.status(201).json({ user });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
@@ -162,6 +170,7 @@ router.put('/users/:id', requireRole('admin'), (req, res) => {
       req.params.id
     );
     const updated = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(req.params.id);
+    try { audit(req, 'update', 'user', Number(req.params.id), { password_changed: !!password }); } catch (_) {}
     res.json({ user: updated });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
@@ -175,6 +184,7 @@ router.delete('/users/:id', requireRole('admin'), (req, res) => {
     return res.status(400).json({ error: 'Cannot delete your own account' });
   }
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  try { audit(req, 'delete', 'user', Number(req.params.id)); } catch (_) {}
   res.json({ message: 'User deleted' });
 });
 

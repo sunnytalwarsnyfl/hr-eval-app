@@ -26,6 +26,7 @@ import EmployeeMyEvals from './pages/EmployeeMyEvals'
 import DisciplinarySignPortal from './pages/DisciplinarySignPortal'
 import NotificationLog from './pages/NotificationLog'
 import EvalCalendar from './pages/EvalCalendar'
+import AuditLog from './pages/AuditLog'
 import ProtectedRoute from './components/Shared/ProtectedRoute'
 
 const AuthContext = createContext(null)
@@ -120,6 +121,9 @@ export default function App() {
           } />
           <Route path="/notifications" element={
             <ProtectedRoute><NotificationLog /></ProtectedRoute>
+          } />
+          <Route path="/audit" element={
+            <ProtectedRoute><AuditLog /></ProtectedRoute>
           } />
           <Route path="/settings" element={
             <ProtectedRoute><Settings /></ProtectedRoute>

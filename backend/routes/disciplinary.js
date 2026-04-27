@@ -5,6 +5,7 @@ const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 const { sendEmail } = require('../utils/mailer');
+const { audit } = require('../utils/auditLog');
 
 // =====================================================================
 // PUBLIC ENDPOINTS (no auth) — must come BEFORE router.use(authenticateToken)
@@ -278,6 +279,7 @@ router.post('/', (req, res) => {
       console.log(`[EMAIL MOCK] Disciplinary notification for employee ${employee_id}`);
     }
 
+    try { audit(req, 'create', 'disciplinary', entry.id, { employee_id, action_level }); } catch (_) {}
     res.status(201).json({ data: entry });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -334,6 +336,7 @@ router.post('/:id/approve', (req, res) => {
       }).catch(err => console.error('Email error (employee):', err.message));
     }
 
+    try { audit(req, 'approve', 'disciplinary', Number(id)); } catch (_) {}
     res.json({ data: updated, success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -364,6 +367,7 @@ router.post('/:id/sign-employee', (req, res) => {
     `).run(signature, now, employee_statement || null, now, newStatus, id);
 
     const updated = db.prepare('SELECT * FROM disciplinary_actions WHERE id = ?').get(id);
+    try { audit(req, 'sign_employee', 'disciplinary', Number(id)); } catch (_) {}
     res.json({ data: updated, success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -392,6 +396,7 @@ router.post('/:id/sign-manager', (req, res) => {
     `).run(signature, now, newStatus, id);
 
     const updated = db.prepare('SELECT * FROM disciplinary_actions WHERE id = ?').get(id);
+    try { audit(req, 'sign_manager', 'disciplinary', Number(id)); } catch (_) {}
     res.json({ data: updated, success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -457,6 +462,7 @@ router.put('/:id', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM disciplinary_actions WHERE id = ?').get(id);
+    try { audit(req, 'update', 'disciplinary', Number(id)); } catch (_) {}
     res.json({ data: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -471,6 +477,7 @@ router.delete('/:id', (req, res) => {
 
   try {
     db.prepare('DELETE FROM disciplinary_actions WHERE id = ?').run(req.params.id);
+    try { audit(req, 'delete', 'disciplinary', Number(req.params.id)); } catch (_) {}
     res.json({ message: 'Deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

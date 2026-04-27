@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 const { toCSV, sendCSV } = require('../utils/csv');
+const { buildICal } = require('../utils/icalendar');
 
 router.use(authenticateToken);
 
@@ -240,6 +241,68 @@ router.get('/eval-calendar', (req, res) => {
 
   triggers.sort((a, b) => a.days_until - b.days_until);
   res.json({ data: triggers });
+});
+
+// GET /api/reports/eval-calendar.ics — download eval triggers as iCalendar file
+router.get('/eval-calendar.ics', (req, res) => {
+  const db = getDb();
+
+  let query = `
+    SELECT e.id AS employee_id, e.name AS employee_name, e.department,
+           e.hire_date, e.anniversary_date,
+           u.name AS manager_name
+    FROM employees e
+    LEFT JOIN users u ON e.manager_id = u.id
+    WHERE e.active = 1
+  `;
+  const params = [];
+  if (req.user.role === 'manager') {
+    query += ' AND e.manager_id = ?';
+    params.push(req.user.id);
+  }
+
+  const employees = db.prepare(query).all(...params);
+  const today = new Date();
+  const events = [];
+
+  for (const emp of employees) {
+    const refDate = emp.anniversary_date || emp.hire_date;
+    if (!refDate) continue;
+    const ref = new Date(refDate);
+    if (isNaN(ref.getTime())) continue;
+
+    // Generate events for next 2 years
+    for (let yearOffset = 0; yearOffset < 2; yearOffset++) {
+      const target = new Date(today.getFullYear() + yearOffset, ref.getMonth(), ref.getDate());
+      if (target < today && yearOffset === 0) continue; // skip past dates this year
+
+      events.push({
+        uid: `eval-${emp.employee_id}-${target.toISOString().split('T')[0]}`,
+        title: `Annual Review Due: ${emp.employee_name}`,
+        description: `Department: ${emp.department || 'N/A'}\nManager: ${emp.manager_name || 'N/A'}\nAnniversary date.`,
+        start: target,
+      });
+
+      // Also add 30/15/5-day reminders
+      [30, 15, 5].forEach(daysBefore => {
+        const reminderDate = new Date(target);
+        reminderDate.setDate(reminderDate.getDate() - daysBefore);
+        if (reminderDate < today) return;
+        events.push({
+          uid: `eval-${emp.employee_id}-${target.toISOString().split('T')[0]}-${daysBefore}d`,
+          title: `Eval Reminder (${daysBefore}d): ${emp.employee_name}`,
+          description: `${daysBefore} days before annual review.\nDepartment: ${emp.department || 'N/A'}`,
+          start: reminderDate,
+        });
+      });
+    }
+  }
+
+  const ics = buildICal(events, 'SIPS HR — Eval Due Dates');
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="sips-hr-eval-calendar.ics"');
+  res.send(ics);
 });
 
 // GET /api/reports/score-distribution

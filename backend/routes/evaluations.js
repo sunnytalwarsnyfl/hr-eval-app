@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { audit } = require('../utils/auditLog');
 
 router.use(authenticateToken);
 
@@ -194,6 +195,7 @@ router.post('/', (req, res) => {
     WHERE ev.id = ?
   `).get(evalId);
 
+  try { audit(req, 'create', 'evaluation', evalId, { type: evaluation_type, employee_id }); } catch (_) {}
   res.status(201).json({ evaluation });
 });
 
@@ -288,6 +290,7 @@ router.put('/:id', (req, res) => {
   }
   const pipPlan = db.prepare('SELECT * FROM pip_plans WHERE evaluation_id = ?').get(id);
 
+  try { audit(req, 'update', 'evaluation', Number(id)); } catch (_) {}
   res.json({ evaluation, sections: sections_data, pipPlan: pipPlan || null });
 });
 
@@ -321,6 +324,7 @@ router.patch('/:id/acknowledge', (req, res) => {
     WHERE ev.id = ?
   `).get(id);
 
+  try { audit(req, 'acknowledge', 'evaluation', Number(id)); } catch (_) {}
   res.json({ evaluation: updated });
 });
 
@@ -379,6 +383,7 @@ router.patch('/:id/hr-review', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM evaluations WHERE id = ?').get(id);
+    try { audit(req, 'hr_review', 'evaluation', Number(id)); } catch (_) {}
     res.json({ evaluation: updated });
   } catch (err) {
     console.error('hr-review error:', err);
@@ -457,6 +462,7 @@ router.delete('/:id', (req, res) => {
 
   // CASCADE should handle sections/items/pip
   db.prepare('DELETE FROM evaluations WHERE id = ?').run(id);
+  try { audit(req, 'delete', 'evaluation', Number(id)); } catch (_) {}
   res.json({ message: 'Evaluation deleted' });
 });
 

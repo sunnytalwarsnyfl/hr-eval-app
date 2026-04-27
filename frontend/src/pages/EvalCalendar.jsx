@@ -104,10 +104,18 @@ export default function EvalCalendar() {
             <h1 className="text-2xl font-bold text-gray-900">Evaluation Calendar</h1>
             <p className="text-sm text-gray-500 mt-1">Upcoming anniversary-based eval triggers (next 90 days)</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={prev} className="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">← Prev</button>
             <button onClick={goToday} className="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">Today</button>
             <button onClick={next} className="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50">Next →</button>
+            <a
+              href="/api/reports/eval-calendar.ics"
+              download="sips-hr-eval-calendar.ics"
+              className="border border-gray-300 px-3 py-1.5 rounded text-sm hover:bg-gray-50 inline-flex items-center gap-1"
+              title="Download as iCalendar (.ics) file for Google Cal / Outlook / Apple Cal"
+            >
+              📅 Export .ics
+            </a>
           </div>
         </div>
 

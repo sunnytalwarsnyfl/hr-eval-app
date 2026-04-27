@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
+const { audit } = require('../utils/auditLog');
 
 router.use(authenticateToken);
 
@@ -216,6 +217,7 @@ router.post('/', (req, res) => {
       console.log(`[EMAIL MOCK] PIP notification for evaluation ${evaluation_id}: ${e.message}`);
     }
 
+    try { audit(req, 'create', 'pip', pip.id, { evaluation_id }); } catch (_) {}
     res.status(201).json({ pip });
   } catch (err) {
     console.error(err);
@@ -258,6 +260,7 @@ router.put('/:id', (req, res) => {
     );
 
     const updated = db.prepare('SELECT * FROM pip_plans WHERE id = ?').get(id);
+    try { audit(req, 'update', 'pip', Number(id)); } catch (_) {}
     res.json({ pip: updated });
   } catch (err) {
     console.error(err);
@@ -281,6 +284,7 @@ router.patch('/:id/status', (req, res) => {
   try {
     db.prepare('UPDATE pip_plans SET status = ? WHERE id = ?').run(status, id);
     const updated = db.prepare('SELECT * FROM pip_plans WHERE id = ?').get(id);
+    try { audit(req, 'update', 'pip', Number(id), { status }); } catch (_) {}
     res.json({ pip: updated });
   } catch (err) {
     console.error(err);
@@ -298,6 +302,7 @@ router.delete('/:id', (req, res) => {
 
   try {
     db.prepare('DELETE FROM pip_plans WHERE id = ?').run(id);
+    try { audit(req, 'delete', 'pip', Number(id)); } catch (_) {}
     res.json({ message: 'PIP deleted' });
   } catch (err) {
     console.error(err);
